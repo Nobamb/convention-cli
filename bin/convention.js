@@ -3,11 +3,13 @@
 /**
  * convention-cli의 CLI 진입점입니다.
  * Commander로 옵션을 정의하고, 입력 옵션에 따라 commands 계층으로 라우팅합니다.
- * 현재는 MVP 기능 연결 전 단계의 placeholder 라우팅을 포함합니다.
  */
 
 // Commander CLI 생성자를 가져옵니다.
 import { Command } from 'commander';
+// 명령어 로직 함수들을 import합니다.
+import { runDefaultCommit, runStepCommit, runBatchCommit } from '../src/commands/commit.js';
+import { setMode, setLanguage } from '../src/commands/config.js';
 
 // CLI 프로그램 인스턴스를 생성합니다.
 const program = new Command();
@@ -33,21 +35,20 @@ const options = program.opts();
 
 /**
  * 옵션 우선순위에 따라 command 함수를 호출합니다.
- * 실제 함수 연결 전까지는 주석 처리된 placeholder 호출을 유지합니다.
  */
 if (options.setMode) {
   // 기본 모드를 설정합니다.
-  // setMode(options.setMode);
+  setMode(options.setMode);
 } else if (options.language) {
   // 기본 커밋 메시지 언어를 설정합니다.
-  // setLanguage(options.language);
+  setLanguage(options.language);
 } else if (options.step) {
   // step 커밋 흐름을 실행합니다.
-  // runStepCommit();
+  runStepCommit();
 } else if (options.batch) {
   // batch 커밋 흐름을 실행합니다.
-  // runBatchCommit();
+  runBatchCommit();
 } else {
   // 설정된 기본 모드로 커밋 흐름을 실행합니다.
-  // runDefaultCommit();
+  runDefaultCommit();
 }
