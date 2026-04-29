@@ -5,3 +5,9 @@
 1-2. @work_process/mvp-1/research-A.md 에서 실제로 조건을 충족했는지 알기 위한 필수  
  테스트 내용에 대한 마크다운 파일도 만들어줄래? @work_process/mvp-1/에서
 test-A.md라는 파일을 한국어로 적어줘
+
+1-3. @AGENTS.md @GEMINI.md @init/01_mvp-1.md 의 B 단계 참고해서 B단계가 잘  
+ 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해
+@work_process/mvp-1/에 B폴더 만들면서 그 폴더 내에 test-B.md로
+만들어서 정리해줘 @work_process/mvp-1/A/test-A.md 의 양식을 참고해서  
+만들어도 좋아
