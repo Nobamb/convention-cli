@@ -1,14 +1,17 @@
 <!-- 프로젝트 제목 및 간단한 설명: Convention CLI는 AI 기반의 Git 커밋 자동화 도구입니다. -->
+
 # Convention CLI
 
 **Convention CLI** is an AI-powered command-line tool designed to help automate the Git commit workflow. It analyzes changes in your Git repository using `git diff` and generates commit message candidates that follow the **Conventional Commits** standard.
 
 <!-- 프로젝트 개요: 커밋 메시지 작성의 번거로움을 해결하기 위한 프로젝트 목적과 배경을 설명합니다. -->
+
 ## Project Overview
 
 Writing meaningful and consistent commit messages can be tedious. Convention CLI solves this by hooking into your standard workflow, analyzing your file changes, and generating a standardized commit message. The 1st MVP uses a Mock AI Provider first, so the Git and commit flow can be verified without sending data to an external AI service.
 
 <!-- 주요 기능: 지원하는 AI 모델, 커밋 모드(step/batch), 자동화 옵션, 다국어 지원 등 핵심 기능을 나열합니다. -->
+
 ## Key Features
 
 - **Mock AI Provider First**: The 1st MVP uses a mock provider that returns a Conventional Commits-style message without external API calls.
@@ -22,13 +25,14 @@ Writing meaningful and consistent commit messages can be tedious. Convention CLI
 - **Cross-Platform**: Fully supported on Windows, macOS, and Linux.
 
 <!-- 설치 방법: 프로젝트를 로컬 환경에 설치하고 설정하는 절차를 설명합니다. -->
+
 ## Installation
 
 To install Convention CLI globally on your machine, clone the repository and use `npm link` or install it directly.
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/convention-cli.git
+git clone https://github.com/Nobamb/convention-cli.git
 cd convention-cli
 
 # Install dependencies
@@ -38,14 +42,16 @@ npm install
 npm link
 ```
 
-*(Note: Once published to npm, you will be able to install it using `npm install -g convention-cli`)*
+_(Note: Once published to npm, you will be able to install it using `npm install -g convention-cli`)_
 
 <!-- 사용법: CLI 명령어의 기본 사용법과 주요 옵션들을 예제와 함께 안내합니다. -->
+
 ## Usage
 
 Once installed, you can use the `convention` command from within any Git repository.
 
 <!-- 기본 명령어: 도움말 확인, 기본 커밋 실행, 배치/단계별 커밋 등 자주 사용하는 명령어를 보여줍니다. -->
+
 ### Basic Commands
 
 ```bash
@@ -63,6 +69,7 @@ convention --step
 ```
 
 <!-- 설정 관리: 커밋 모드나 출력 언어 등 사용자 환경설정 방법을 설명합니다. -->
+
 ### Configuration
 
 You can easily set your preferences so you don't have to provide flags every time.
@@ -95,7 +102,7 @@ Convention CLI는 Git 변경 사항을 분석해 Conventional Commits 형식의 
 ## 설치
 
 ```bash
-git clone https://github.com/your-username/convention-cli.git
+git clone https://github.com/Nobamb/convention-cli.git
 cd convention-cli
 npm install
 npm link
