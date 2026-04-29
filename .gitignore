@@ -1,0 +1,44 @@
+# Node.js 관련 설정
+# 프로젝트 의존성 라이브러리 폴더 (용량이 크고 npm install로 재생성 가능하므로 제외)
+node_modules/
+# npm, yarn, pnpm 실행 중 발생하는 디버그 및 에러 로그 파일들
+npm-debug.log
+yarn-error.log
+yarn-debug.log
+.pnpm-debug.log
+# npm 로컬 캐시 데이터
+.npm/
+
+# 환경 변수 설정
+# API 키, DB 비밀번호 등 민감한 설정 정보가 담긴 환경 변수 파일 (보안을 위해 반드시 제외)
+.env
+.env.*
+
+# 보안 및 비밀 키 (Security & Secrets)
+# 인증서 파일 (.pem, .key)
+*.pem
+*.key
+# SSH 개인 키 파일
+id_rsa
+id_ed25519
+# 서비스 계정이나 앱 자격 증명 정보가 담긴 JSON 파일
+credentials.json
+secrets.json
+
+# 로그 파일
+# 어플리케이션 실행 로그를 저장하는 폴더
+logs/
+# 모든 형태의 로그 파일
+*.log
+
+# 운영체제(OS) 생성 파일
+# macOS 전용 메타데이터 저장 파일
+.DS_Store
+.DS_Store?
+._*
+# macOS Spotlight 인덱싱 및 휴지통 관련 폴더
+.Spotlight-V100
+.Trashes
+# Windows 폴더 미리보기 이미지 캐시 파일
+ehthumbs.db
+Thumbs.db
