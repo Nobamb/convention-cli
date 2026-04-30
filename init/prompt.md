@@ -30,3 +30,8 @@ test-A.md라는 파일을 한국어로 적어줘
 5-1. @work_process/mvp-1/E/test-E.md 내용의 각 테스트 내용들 agent들 모델 gemini 3.1 flash  
  lite 2개로 v-2,v-3 작업 해보고 gemini 3.1 pro preview 모델로 각 테스트 잘 동작하는지  
  검증해서 검증상 이상있는 부분 수정 작업까지 해
+
+6. @AGENTS.md @GEMINI.md @init/01_mvp-1.md 의 F 단계 참고해서 F단계가 잘  
+    진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해
+   @work_process/mvp-1/에 F폴더 만들면서 그 폴더 내에 test-F.md로
+   만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-1/F에 research-F.md 파일로 정리해줘
