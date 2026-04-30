@@ -7,6 +7,7 @@
 
 // Commander CLI 생성자를 가져옵니다.
 import { Command } from 'commander';
+import chalk from 'chalk';
 // 명령어 로직 함수들을 import합니다.
 import { runDefaultCommit, runStepCommit, runBatchCommit } from '../src/commands/commit.js';
 import { setMode, setLanguage } from '../src/commands/config.js';
@@ -20,12 +21,17 @@ program
   .description('AI-powered CLI tool to automate the Git commit workflow using Conventional Commits')
   .version('1.0.0');
 
+// 커스텀 도움말 문구를 설정합니다.
+program.addHelpText('before', `
+${chalk.bold.cyan('AI 에이전트를 활용한 지능형 Git 커밋 & 워크플로우 자동화 툴 🚀')}
+`);
+
 // 1차 MVP에서 사용할 커밋 모드와 설정 옵션을 정의합니다.
 program
-  .option('--step', 'Iterate through changed files for individual commits')
-  .option('--batch', 'Analyze all changes for a single consolidated commit')
-  .option('--set-mode <mode>', 'Set the default mode (step or batch)')
-  .option('--language <lang>', 'Set the default language (ko, en, jp, cn)');
+  .option('--step', '변경된 파일들을 하나씩 확인하며 커밋을 진행합니다.')
+  .option('--batch', '모든 변경 사항을 분석하여 하나의 통합 커밋을 생성합니다.')
+  .option('--set-mode <mode>', '기본 실행 모드를 설정합니다. (사용 가능 값: step, batch)')
+  .option('--language <lang>', '커밋 메시지 생성 언어를 설정합니다. (사용 가능 값: ko, en, jp, cn)');
 
 // 프로세스 인자를 Commander로 파싱합니다.
 program.parse(process.argv);
