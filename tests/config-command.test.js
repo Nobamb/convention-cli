@@ -138,3 +138,120 @@ test('T-7 invalid mode values do not modify config file contents', () => {
   const after = fs.readFileSync(store.CONFIG_FILE_PATH, 'utf8');
   assert.equal(after, before);
 });
+
+test('T-8 setLanguage("ko") stores Korean language', () => {
+  store.saveConfig({
+    ...DEFAULT_CONFIG,
+    language: 'en',
+  });
+
+  commands.setLanguage('ko');
+
+  assert.equal(store.loadConfig().language, 'ko');
+});
+
+test('T-9 setLanguage("en") stores English language', () => {
+  store.saveConfig({
+    ...DEFAULT_CONFIG,
+    language: 'ko',
+  });
+
+  commands.setLanguage('en');
+
+  assert.equal(store.loadConfig().language, 'en');
+});
+
+test('T-10 setLanguage("jp") stores Japanese language', () => {
+  store.saveConfig({
+    ...DEFAULT_CONFIG,
+    language: 'ko',
+  });
+
+  commands.setLanguage('jp');
+
+  assert.equal(store.loadConfig().language, 'jp');
+});
+
+test('T-11 setLanguage("cn") stores Chinese language', () => {
+  store.saveConfig({
+    ...DEFAULT_CONFIG,
+    language: 'ko',
+  });
+
+  commands.setLanguage('cn');
+
+  assert.equal(store.loadConfig().language, 'cn');
+});
+
+test('T-12 invalid language values do not overwrite existing language', () => {
+  store.saveConfig({
+    ...DEFAULT_CONFIG,
+    language: 'ko',
+  });
+
+  commands.setLanguage('de');
+  commands.setLanguage('kr');
+  commands.setLanguage('');
+  commands.setLanguage(undefined);
+  commands.setLanguage(null);
+
+  assert.equal(store.loadConfig().language, 'ko');
+});
+
+test('T-13 setLanguage only changes language and preserves stored values', () => {
+  const existingConfig = {
+    ...DEFAULT_CONFIG,
+    mode: 'batch',
+    language: 'ko',
+    provider: 'mock',
+    confirmBeforeCommit: false,
+  };
+  store.saveConfig(existingConfig);
+
+  commands.setLanguage('en');
+
+  assert.deepEqual(store.loadConfig(), {
+    ...existingConfig,
+    language: 'en',
+  });
+});
+
+test('T-14 setLanguage creates config from DEFAULT_CONFIG when config file is missing', () => {
+  assert.equal(fs.existsSync(store.CONFIG_FILE_PATH), false);
+
+  commands.setLanguage('jp');
+
+  assert.equal(fs.existsSync(store.CONFIG_FILE_PATH), true);
+  assert.deepEqual(store.loadConfig(), {
+    ...DEFAULT_CONFIG,
+    language: 'jp',
+  });
+});
+
+test('T-15 saved language is reflected by loadConfig immediately', () => {
+  store.saveConfig({
+    ...DEFAULT_CONFIG,
+    language: 'ko',
+  });
+
+  commands.setLanguage('cn');
+
+  const loadedConfig = store.loadConfig();
+  assert.equal(loadedConfig.language, 'cn');
+});
+
+test('T-16 invalid language values do not modify config file contents', () => {
+  store.saveConfig({
+    ...DEFAULT_CONFIG,
+    mode: 'batch',
+    language: 'jp',
+  });
+  const before = fs.readFileSync(store.CONFIG_FILE_PATH, 'utf8');
+
+  commands.setLanguage('de');
+  commands.setLanguage('korean');
+  commands.setLanguage(null);
+
+  const after = fs.readFileSync(store.CONFIG_FILE_PATH, 'utf8');
+  assert.equal(after, before);
+});
