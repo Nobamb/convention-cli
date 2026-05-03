@@ -1,16 +1,18 @@
 /**
- * 커밋 관련 명령어 로직을 담당합니다.
- * Phase C에서는 호출 여부 확인을 위한 로그만 출력합니다.
+ * 커밋 관련 명령의 사용자 흐름을 담당합니다.
+ * 실제 Git 커밋 흐름은 이후 단계에서 구현하고, 현재 단계에서는 출력 방식을 logger로 통일합니다.
  */
 
+import { info } from '../utils/logger.js';
+
 export const runDefaultCommit = async () => {
-  console.log("[DEBUG] runDefaultCommit 호출됨 (기본 모드 실행)");
+  info('기본 커밋 흐름을 준비합니다.');
 };
 
 export const runStepCommit = async () => {
-  console.log("[DEBUG] runStepCommit 호출됨 (개별 파일 커밋)");
+  info('파일별 커밋 흐름을 준비합니다.');
 };
 
 export const runBatchCommit = async () => {
-  console.log("[DEBUG] runBatchCommit 호출됨 (통합 커밋)");
+  info('통합 커밋 흐름을 준비합니다.');
 };
