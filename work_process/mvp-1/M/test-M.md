@@ -9,7 +9,7 @@
 | V-1 | `isGitRepository()` export 확인 | `src/core/git.js` 코드 확인 | 다른 모듈에서 `isGitRepository`를 import할 수 있다. |
 | V-2 | Git 명령 확인 | `src/core/git.js` 코드 확인 | `git rev-parse --is-inside-work-tree`를 사용한다. |
 | V-3 | 인자 배열 방식 확인 | Git command 실행 코드 확인 | `execFileSync("git", ["rev-parse", "--is-inside-work-tree"], ...)` 또는 동등한 `spawnSync` 배열 방식을 사용한다. |
-| V-4 | shell 문자열 금지 확인 | `rg "execSync|git rev-parse" src/core/git.js` | shell 문자열 조합으로 Git 명령을 실행하지 않는다. |
+| V-4 | shell 문자열 금지 확인 | `rg "execSync|shell:\\s*true" src/core/git.js` | `execSync`와 `shell: true`를 사용하지 않고, `execFileSync("git", ["rev-parse", "--is-inside-work-tree"], ...)` 또는 동등한 `spawnSync("git", [...])` 인자 배열 방식을 사용한다. |
 | V-5 | boolean 반환 확인 | 함수 구현 확인 | Git 저장소 내부는 `true`, 실패 또는 저장소 밖은 `false`를 반환한다. |
 | V-6 | core 출력 없음 확인 | 함수 구현 확인 | `isGitRepository()` 내부에서 `console` 또는 logger를 직접 호출하지 않는다. |
 | V-7 | 변경 명령 없음 확인 | `src/core/git.js` 코드 확인 | Phase M에서 `git add`, `git commit`, `git reset`을 실행하지 않는다. |
