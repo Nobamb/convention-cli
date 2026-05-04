@@ -78,7 +78,14 @@ R  old-name.js -> new-name.js
 
 1차 MVP 문서에서는 이 한계를 명확히 남기고, untracked 파일 내용 직접 읽기는 보안 Gate가 정리된 이후 확장 범위로 둡니다.
 
-## 7. 테스트 관점
+## 7. 보안 및 데이터 보호 기준
+
+- `getChangedFiles()`는 `execFileSync` 또는 `spawnSync`의 인자 배열 방식만 사용하고 shell 문자열을 사용하지 않습니다.
+- 함수는 파일 내용을 읽거나 raw diff를 출력하지 않습니다.
+- 파일명도 사용자 데이터일 수 있으므로 전체 변경 파일 목록을 로그로 남기지 않습니다.
+- 민감 파일 제외와 secret scanning은 이후 diff/prompt/AI 전송 Gate와 함께 점검합니다.
+
+## 8. 테스트 관점
 
 - 변경사항 없음: `[]`
 - tracked 파일 수정
@@ -90,6 +97,6 @@ R  old-name.js -> new-name.js
 
 테스트는 격리된 임시 Git 저장소에서 수행하고 실제 사용자 저장소의 히스토리를 변경하지 않습니다.
 
-## 8. 다음 단계
+## 9. 다음 단계
 
 Phase N의 결과는 Phase O의 전체 diff 추출 전 변경사항 확인과 Phase P의 파일별 diff 입력으로 연결됩니다.
