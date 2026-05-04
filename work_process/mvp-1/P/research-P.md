@@ -88,6 +88,9 @@ fileDiffs.push({ file, diff });
 - diff 원문 출력 금지
 - 파일명 목록도 불필요하게 전체 출력하지 않음
 - 테스트는 격리된 Git 저장소에서만 수행
+- Phase P에서는 untracked 파일 내용을 직접 읽지 않음
+- 민감 파일 제외와 secret scanning은 prompt 생성 또는 외부 AI 전송 전 보안 Gate에서 처리
+- tracked 민감 파일의 per-file diff가 반환될 수 있으므로 raw diff를 로그로 출력하지 않음
 
 ## 9. 테스트 관점
 

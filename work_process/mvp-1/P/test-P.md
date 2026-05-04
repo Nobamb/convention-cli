@@ -9,7 +9,7 @@
 | V-1 | `getFileDiffs(files)` export 확인 | `src/core/git.js` 코드 확인 | 다른 모듈에서 `getFileDiffs`를 import할 수 있다. |
 | V-2 | 파일별 diff 명령 확인 | Git command 실행 코드 확인 | `git -c core.quotepath=false diff HEAD -- <file>` 의미로 실행한다. |
 | V-3 | 인자 배열 방식 확인 | Git command 실행 코드 확인 | 파일 경로를 shell 문자열이 아니라 argv 배열의 단일 인자로 전달한다. |
-| V-4 | `--` pathspec 구분자 확인 | Git args 확인 | `["diff", "HEAD", "--", file]` 구조를 사용한다. |
+| V-4 | `--` pathspec 구분자 확인 | Git args 확인 | `["-c", "core.quotepath=false", "diff", "HEAD", "--", file]` 구조를 사용한다. |
 | V-5 | UTF-8 출력 확인 | child process 옵션 확인 | `encoding: "utf8"`을 지정한다. |
 | V-6 | 입력 검증 확인 | 함수 구현 확인 | 배열이 아닌 입력은 `TypeError`, 빈 배열은 `[]`로 처리한다. |
 | V-7 | 빈 diff 제외 확인 | 함수 구현 확인 | `diff.trim()`이 비어 있는 파일은 결과에서 제외한다. |
@@ -25,7 +25,7 @@
 ### T-2: 여러 파일 diff 분리
 - **준비:** 파일 A와 파일 B를 각각 수정한다.
 - **실행:** `getFileDiffs(["a.js", "b.js"])`를 호출한다.
-- **예상 결과:** 각 파일이 별도 배열 원소로 반환된다.
+- **예상 결과:** 각 파일이 별도 배열 원소로 반환되고, 각 `diff`는 자기 파일의 header/content만 포함하며 다른 파일의 diff를 포함하지 않는다.
 
 ### T-3: 공백 포함 파일명
 - **준비:** tracked 파일 `file with space.js`를 수정한다.
