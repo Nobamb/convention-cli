@@ -46,17 +46,22 @@
 - **실행:** `getFullDiff()`를 호출한다.
 - **예상 결과:** diff header에서 한글 파일명이 readable하게 표시된다.
 
-### T-7: untracked-only 파일 미포함
+### T-7: staged 신규 파일 포함
+- **준비:** 새 파일을 만들고 내용을 작성한 뒤 `git add <file>`로 staged 상태를 만든다.
+- **실행:** `getFullDiff()`를 호출한다.
+- **예상 결과:** 반환 diff에 `diff --git`, `new file mode`, 신규 파일 내용이 포함된다.
+
+### T-8: untracked-only 파일 미포함
 - **준비:** 새 파일을 만들되 `git add` 하지 않는다.
 - **실행:** `getFullDiff()`를 호출한다.
 - **예상 결과:** untracked-only 파일 내용은 diff에 포함되지 않는다.
 
-### T-8: raw diff 미출력
+### T-9: raw diff 미출력
 - **준비:** `console.log`, `console.error`, logger 함수를 spy 또는 mock 처리한다.
 - **실행:** diff가 있는 상태에서 `getFullDiff()`를 호출한다.
 - **예상 결과:** diff 문자열은 반환되지만 console/logger에는 출력되지 않는다.
 
-### T-9: Git 저장소 밖 실패 흐름
+### T-10: Git 저장소 밖 실패 흐름
 - **준비:** Git 저장소가 아닌 임시 디렉터리에서 테스트를 수행한다.
 - **실행:** `getFullDiff()`를 호출한다.
 - **예상 결과:** Git 명령 실패가 호출자에게 전달되며, 사용자 친화 메시지는 command layer에서 처리한다.
@@ -67,7 +72,7 @@
 2. 임시 디렉터리에 테스트용 Git 저장소를 생성한다.
 3. `git init`, local `user.email`, local `user.name` 설정을 수행한다.
 4. 기본 파일을 만들고 테스트 repo 내부에서만 initial commit을 생성한다.
-5. 케이스별로 staged, unstaged, 삭제, 한글 파일명 변경을 만든다.
+5. 케이스별로 staged, unstaged, staged 신규 파일, untracked-only 파일, 삭제, 한글 파일명 변경을 만든다.
 6. `process.chdir(repoDir)` 상태에서 `getFullDiff()`를 호출한다.
 7. 반환 diff 문자열에 필요한 header나 변경 내용이 포함되는지 확인한다.
 8. raw diff가 console/logger로 출력되지 않았는지 spy로 확인한다.

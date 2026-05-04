@@ -35,6 +35,7 @@ execFileSync("git", ["-c", "core.quotepath=false", "diff", "HEAD"], {
 | 변경 상태 | 포함 여부 | 기준 |
 | :--- | :--- | :--- |
 | staged tracked 변경 | 포함 | `git diff HEAD`에 포함 |
+| staged 신규 파일 | 포함 | `git add` 후 index에 올라간 신규 파일은 `git diff HEAD`에 new file diff로 포함 |
 | unstaged tracked 변경 | 포함 | `git diff HEAD`에 포함 |
 | tracked 파일 삭제 | 포함 | 삭제 diff 포함 |
 | rename | Git diff 표현 기준 | 기본 diff 출력에 따름 |
@@ -56,6 +57,8 @@ logger.error(diff);
 
 diff에는 API key, token, password, private key, 내부 코드가 포함될 수 있으므로 로그에 남기지 않습니다. 출력이 필요하면 파일 개수나 처리 단계 같은 메타 정보만 사용합니다.
 
+tracked 민감 파일의 diff는 raw Git diff 함수의 반환값에 포함될 수 있습니다. 따라서 Phase O는 diff를 출력하지 않고, 민감 파일 제외와 secret scanning은 prompt 생성 또는 외부 AI 전송 전 보안 Gate에서 처리해야 합니다.
+
 ## 6. 에러 처리 기준
 
 - Git 저장소 여부는 Phase M의 `isGitRepository()`에서 선확인 권장
@@ -68,6 +71,7 @@ diff에는 API key, token, password, private key, 내부 코드가 포함될 수
 - 변경사항 없음: 빈 문자열 반환
 - tracked 파일 unstaged 변경 diff 포함
 - staged 변경 diff 포함
+- staged 신규 파일 diff 포함
 - staged와 unstaged가 함께 있을 때 모두 포함
 - 한글 파일명 diff header가 readable하게 출력
 - Git 저장소 밖 실패 처리
