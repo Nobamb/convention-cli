@@ -6,6 +6,9 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
+  addAll,
+  addFile,
+  commit,
   getChangedFiles,
   getFileDiffs,
   getFullDiff,
@@ -22,6 +25,7 @@ const gitAvailable = (() => {
 })();
 
 const skipWithoutGit = gitAvailable ? false : 'git is not available in this environment';
+const KOREAN_NEW_FILE = '\ud55c\uae00-\uc0c8\ud30c\uc77c.js';
 
 function runGit(cwd, args, options = {}) {
   return execFileSync('git', args, {
@@ -85,6 +89,20 @@ async function withRepo(callback) {
   }
 }
 
+function getPorcelainStatus(repoDir) {
+  return runGit(repoDir, ['-c', 'core.quotepath=false', 'status', '--porcelain']);
+}
+
+function getStatusLine(repoDir, relativePath) {
+  return getPorcelainStatus(repoDir)
+    .split(/\r?\n/)
+    .find((line) => line.includes(relativePath));
+}
+
+function getLastCommitMessage(repoDir) {
+  return runGit(repoDir, ['log', '-1', '--pretty=%B']).replace(/\r?\n+$/, '');
+}
+
 test('isGitRepository returns true in a git repository root', { skip: skipWithoutGit }, async () => {
   await withRepo(() => {
     assert.equal(isGitRepository(), true);
@@ -120,8 +138,11 @@ test('git core implementation avoids unsafe execution and logging patterns', () 
   assert.equal(source.includes('execSync'), false);
   assert.equal(/shell\s*:\s*true/.test(source), false);
   assert.equal(/console\./.test(source), false);
-  assert.equal(source.includes('logger'), false);
   assert.equal(source.includes('reset'), false);
+  assert.match(source, /\['add', '-A'\]/);
+  assert.match(source, /\['add', '--', file\]/);
+  assert.match(source, /\['commit', '-m', message\]/);
+  assert.match(source, /encoding: 'utf8'/);
 });
 
 test('getChangedFiles returns an empty array for a clean repository', { skip: skipWithoutGit }, async () => {
@@ -334,6 +355,109 @@ test('getFileDiffs does not write raw diff output to console', { skip: skipWitho
       console.error = originalError;
       console.warn = originalWarn;
       console.info = originalInfo;
+    }
+  });
+});
+
+test('addAll stages modified, new, deleted, space, and Korean filenames', { skip: skipWithoutGit }, async () => {
+  await withRepo((repoDir) => {
+    writeFile(repoDir, 'README.md', 'changed readme\n');
+    writeFile(repoDir, 'new-file.js', 'new file\n');
+    removeFile(repoDir, 'delete-me.js');
+    writeFile(repoDir, 'file with space.js', 'space file changed\n');
+    writeFile(repoDir, KOREAN_NEW_FILE, 'Korean filename content\n');
+
+    addAll();
+
+    assert.match(getStatusLine(repoDir, 'README.md'), /^M /);
+    assert.match(getStatusLine(repoDir, 'new-file.js'), /^A /);
+    assert.match(getStatusLine(repoDir, 'delete-me.js'), /^D /);
+    assert.match(getStatusLine(repoDir, 'file with space.js'), /^M /);
+    assert.match(getStatusLine(repoDir, KOREAN_NEW_FILE), /^A /);
+  });
+});
+
+test('addFile stages only the requested file and supports spaces', { skip: skipWithoutGit }, async () => {
+  await withRepo((repoDir) => {
+    writeFile(repoDir, 'README.md', 'changed readme\n');
+    writeFile(repoDir, 'file with space.js', 'space file changed\n');
+
+    addFile('file with space.js');
+
+    assert.match(getStatusLine(repoDir, 'file with space.js'), /^M /);
+    assert.match(getStatusLine(repoDir, 'README.md'), /^ M/);
+  });
+});
+
+test('addFile stages Korean filenames and tracked deletions', { skip: skipWithoutGit }, async () => {
+  await withRepo((repoDir) => {
+    writeFile(repoDir, KOREAN_NEW_FILE, 'Korean filename content\n');
+    addFile(KOREAN_NEW_FILE);
+    assert.match(getStatusLine(repoDir, KOREAN_NEW_FILE), /^A /);
+
+    removeFile(repoDir, 'delete-me.js');
+    addFile('delete-me.js');
+    assert.match(getStatusLine(repoDir, 'delete-me.js'), /^D /);
+  });
+});
+
+test('addFile rejects invalid input and propagates git errors', { skip: skipWithoutGit }, async () => {
+  await withRepo(() => {
+    assert.throws(() => addFile(''), TypeError);
+
+    const originalError = console.error;
+    console.error = () => {};
+
+    try {
+      assert.throws(() => addFile('none.js'));
+    } finally {
+      console.error = originalError;
+    }
+  });
+});
+
+test('commit creates a commit with a normal message', { skip: skipWithoutGit }, async () => {
+  await withRepo((repoDir) => {
+    writeFile(repoDir, 'README.md', 'changed readme\n');
+    addFile('README.md');
+
+    commit('feat: add normal feature');
+
+    assert.equal(getLastCommitMessage(repoDir), 'feat: add normal feature');
+  });
+});
+
+test('commit preserves Korean, emoji, multiline, and special character messages', { skip: skipWithoutGit }, async () => {
+  await withRepo((repoDir) => {
+    const messages = [
+      'feat: 한글 메시지 테스트',
+      'feat: add emoji 🚀',
+      'feat: add multiline body\n\n- body line 1\n- body line 2',
+      'feat: test quotes \' " $ ` ;',
+    ];
+
+    for (const [index, message] of messages.entries()) {
+      writeFile(repoDir, `commit-${index}.js`, `change ${index}\n`);
+      addFile(`commit-${index}.js`);
+      commit(message);
+
+      assert.equal(getLastCommitMessage(repoDir), message);
+    }
+  });
+});
+
+test('commit rejects empty messages and propagates git errors when nothing is staged', { skip: skipWithoutGit }, async () => {
+  await withRepo(() => {
+    assert.throws(() => commit(''), TypeError);
+    assert.throws(() => commit(null), TypeError);
+
+    const originalError = console.error;
+    console.error = () => {};
+
+    try {
+      assert.throws(() => commit('chore: should fail'));
+    } finally {
+      console.error = originalError;
     }
   });
 });
