@@ -188,13 +188,27 @@ export function addFile(file) {
 
 // staging된 변경사항을 전달받은 메시지로 커밋합니다.
 // 커밋 메시지는 argv 배열의 단일 인자로 전달하므로 따옴표, 개행, 특수문자, emoji가 shell에서 재해석되지 않습니다.
-export function commit(message) {
+export function commit(message, files = []) {
   if (typeof message !== 'string' || message.trim().length === 0) {
     throw new TypeError('message must be a non-empty string');
   }
 
+  if (!Array.isArray(files)) {
+    throw new TypeError('files must be an array');
+  }
+
+  for (const file of files) {
+    if (typeof file !== 'string' || file.length === 0) {
+      throw new TypeError('files must contain only non-empty strings');
+    }
+  }
+
   try {
-    runGit(['commit', '-m', message]);
+    // 파일 목록이 전달된 경우에는 commit pathspec을 함께 넘겨, 이미 staged 되어 있던 다른 파일이
+    // 실수로 같은 커밋에 포함되지 않도록 제한합니다. 특히 command 계층에서 민감 파일을 제외한 뒤에도
+    // 사용자가 실행 전에 `.env` 등을 staged 해둔 상태일 수 있으므로, pathspec 제한은 마지막 방어선입니다.
+    const args = files.length > 0 ? ['commit', '-m', message, '--', ...files] : ['commit', '-m', message];
+    runGit(args);
   } catch (error) {
     // nothing to commit, Git lock, 권한 문제 같은 실제 Git 실패는 상위 commit workflow에서 사용자 안내를 결정하도록 전파합니다.
     logError('Failed to create commit.');
