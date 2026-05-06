@@ -1,3 +1,5 @@
+## 1차 MVP 내용
+
 1. gemini-3.1-flash-lite-preview 모델 4개를 활용해서 research-A.md, agents.md, gemini.md의 내용을 파악해서 각 작업을 진행해주고, gemini-3.1-pro-preview 모델을 통해서 전체적인 작업에 대해 문제가 없는지 확인해줘
 
 1-1. .gitignore/README.md/convention.js 총 3개의 파일들에 대해서 각 파일마다 하나씩 gemini-3.1-flash-lite-preview 모델을 통해서 총 3개의 agent들로 한국어로 파일 내의 코드들에 대해 주석 자세하게 써주고, 전체적인 점검은 gemini-3.1-pro-preview 모델로 확인해줘
@@ -165,3 +167,7 @@ test-A.md라는 파일을 한국어로 적어줘
     만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-1/X에 research-X.md 파일로 정리해줘
 
 24-1. X 단계는 기본 convention 실행 Agent이므로 @work_process/mvp-1/X/research-X.md 내용에는 runDefaultCommit(), config 로드, mode가 step이면 runStepCommit 호출, mode가 batch이면 runBatchCommit 호출, mode가 없거나 잘못되면 step 기본값 사용, bin/convention.js 라우팅 연결을 정리해줘. @work_process/mvp-1/X/test-X.md 내용에는 config.mode step, config.mode batch, config 없음, 잘못된 mode, convention 명령 기본 실행 흐름을 테스트하는 항목을 한국어로 정리해줘.
+
+=============================================================================
+
+## 2차 MVP 내용
