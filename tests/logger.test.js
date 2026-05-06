@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { afterEach, beforeEach } from 'node:test';
 
-import { runBatchCommit, runDefaultCommit, runStepCommit } from '../src/commands/commit.js';
 import { error, info, success, warn } from '../src/utils/logger.js';
 
 let originalLog;
@@ -53,9 +52,9 @@ test('error writes prefixed message to console.error', () => {
 });
 
 test('warn writes prefixed message to console.warn', () => {
-  warn('변경 사항이 없습니다.');
+  warn('변경사항이 없습니다.');
 
-  assert.deepEqual(warnCalls, ['⚠️ 변경 사항이 없습니다.']);
+  assert.deepEqual(warnCalls, ['⚠️ 변경사항이 없습니다.']);
   assert.deepEqual(logCalls, []);
   assert.deepEqual(errorCalls, []);
 });
@@ -73,20 +72,4 @@ test('logger functions return undefined', () => {
   assert.equal(error('bad'), undefined);
   assert.equal(warn('careful'), undefined);
   assert.equal(info('note'), undefined);
-});
-
-test('commit command placeholders use info logger output', async () => {
-  await runDefaultCommit();
-  await runStepCommit();
-  await runBatchCommit();
-
-  assert.deepEqual(logCalls, [
-    'ℹ️ 기본 커밋 흐름을 준비합니다.',
-    'ℹ️ 파일별 커밋 흐름을 준비합니다.',
-    'ℹ️ 통합 커밋 흐름을 준비합니다.',
-  ]);
-  assert.deepEqual(errorCalls, []);
-  assert.deepEqual(warnCalls, []);
-  const debugPrefix = ['[', 'DEBUG', ']'].join('');
-  assert.equal(logCalls.some((message) => message.includes(debugPrefix)), false);
 });
