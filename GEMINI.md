@@ -45,14 +45,22 @@ All AI Agents working on this project MUST strictly follow these rules:
 - **Config Path:** Configuration should be read from/written to `~/.config/convention/config.json`.
 - **Testing:** Git tests must run in isolated environments (e.g., `/tmp/convention-test-repo`), NOT within the real user repository. No automatic destructive commands without user confirmation.
 
-### 3. Orchestration & MVP Phases (`01_mvp-1.md`)
+### 3. Orchestration & MVP Phases (`01_mvp-1.md`, `02_mvp-2.md`)
 - **Agent Separation:** Agents should be broken down into micro-tasks (e.g., "Help Output Agent", "Config Write Agent", "Git Diff Agent") rather than monolithic tasks ("Git Agent").
-- **Implementation Sequence:**
-  1. **Phase 1 (Foundation):** Basic CLI structure, `npm link`, and `--help` output.
-  2. **Phase 2 (Config):** Read/write `config.json`, `--set-mode`, and `--language`.
-  3. **Phase 3 (Git Analysis):** Repository validation, file list, and diff extraction (handling UTF-8 and `core.quotepath=false`).
-  4. **Phase 4 (AI Integration):** Prompt generation and AI response cleaning (starting with a Mock AI provider).
-  5. **Phase 5 (Commit Flow):** Git staging, AI message generation, user confirmation (`confirmBeforeCommit`), and final Git commit via `--batch` / `--step`.
+- **Phase 1 (Foundation - MVP-1):**
+  1. **Foundation:** Basic CLI structure, `npm link`, and `--help` output.
+  2. **Config:** Read/write `config.json`, `--set-mode`, and `--language`.
+  3. **Git Analysis:** Repository validation, file list, and diff extraction (handling UTF-8 and `core.quotepath=false`).
+  4. **AI Integration:** Prompt generation and AI response cleaning (starting with a Mock AI provider).
+  5. **Commit Flow:** Git staging, AI message generation, user confirmation (`confirmBeforeCommit`), and final Git commit via `--batch` / `--step`.
+
+- **Phase 2 (Expansion - MVP-2):**
+  1. **Provider Refactoring:** Define a common interface and migrate Mock AI to a formal provider structure (`src/providers/`).
+  2. **Local LLM Integration:** Support `localLLM` with endpoint configuration and model selection via `/v1/models`.
+  3. **Credential Management:** Securely store API keys in `~/.config/convention/credentials.json` (isolated from `config.json`).
+  4. **Cloud AI Integration:** Implement Gemini and OpenAI-compatible providers.
+  5. **Model Configuration CLI:** Implement `convention --model` for interactive setup (Provider -> Auth -> Model).
+  6. **Advanced Git Flow:** Implement `--push` (post-commit push) and `--reset` (safe undo of last commit with confirmation).
 
 ---
 
@@ -61,4 +69,5 @@ All AI Agents working on this project MUST strictly follow these rules:
 - `init/structure.md`: Detailed module and directory structure planning (Why `core/ai.js` and `providers` are separated).
 - `init/00_rule.md`: Core security, file exclusion, execution, and testing rules for AI agents.
 - `init/01_mvp-1.md`: 1st MVP phased orchestration and micro-agent task definitions.
+- `init/02_mvp-2.md`: 2nd MVP expansion plan (Real AI providers, credentials, model config, push/reset).
 - `AGENTS.md`: High-level repository guidelines and AI instructions.
