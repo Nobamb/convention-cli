@@ -173,3 +173,109 @@ test-A.md라는 파일을 한국어로 적어줘
 ## 2차 MVP 내용
 
 1. AGENTS.md, GEMINI.md, init/00_rule.md, ** init/02_mvp-2.md ** 의 내용들을 참고해서 init/prompt.md의 내용을 2차 MVP 내용의 1번 아래에서부터 작성해서, 2번부터 시작해서 B단계부터 X단계까지 쭉 만들어줘 B~X단계까지의 각 단계는 gemini 3.0 flash 모델로 prompt.md의 각 단계를 하나씩 작성하도록 하고, 양식은 1차 MVP 내용에 있는 24번을 참고해서 2단계부터 작성하면 좋겠어 그리고 prompt의 B~X단계까지 작성할 프롬프트가 모두 작성이 완료되면 gemini 3.1 pro 모델로 init/02_mvp-2.md의 내용을 기반으로 prompt.md의 2차 MVP 내용에 있는 전반적인 내용들을 분석해서 2차 mvp 내용에 부합하는 내용들인지 파악을 해보면 좋겠어
+
+### Phase 1. Provider 구조 기반 만들기
+
+2. gemini 3.0 flash 모델 agent 1개를 B 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 B 단계 참고해서 B단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 B폴더 만들면서 그 폴더 내에 test-B.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/B에 research-B.md 파일로 정리해줘
+
+2-1. B 단계는 Provider 인터페이스 정의 Agent이므로 @work_process/mvp-2/B/research-B.md 내용에는 Provider 공통 함수명 정의, generateCommitMessage/listModels/validateConfig 인터페이스 정의, Provider 라우팅 구조 초안 작성을 정리해줘. @work_process/mvp-2/B/test-B.md 내용에는 Provider가 변경되어도 core/ai.js에서 동일한 방식으로 호출 가능한지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+3. gemini 3.0 flash 모델 agent 1개를 C 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 C 단계 참고해서 C단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 C폴더 만들면서 그 폴더 내에 test-C.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/C에 research-C.md 파일로 정리해줘
+
+3-1. C 단계는 Mock Provider 이전 Agent이므로 @work_process/mvp-2/C/research-C.md 내용에는 mock.js 생성, 항상 고정 커밋 메시지 반환, providers/index.js에서 mock 라우팅, core/ai.js가 mock Provider를 호출하도록 변경 로직을 정리해줘. @work_process/mvp-2/C/test-C.md 내용에는 provider가 mock일 때 기존 1차 MVP 커밋 흐름이 정상 동작하는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+4. gemini 3.0 flash 모델 agent 1개를 D 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 D 단계 참고해서 D단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 D폴더 만들면서 그 폴더 내에 test-D.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/D에 research-D.md 파일로 정리해줘
+
+4-1. D 단계는 Provider 목록 정의 Agent이므로 @work_process/mvp-2/D/research-D.md 내용에는 Stable/Experimental Provider 목록 정의, 2차 MVP 지원 Provider(mock, localLLM, gemini/openaiCompatible) 정의, isValidProvider(provider) 유효성 검증 함수 추가 로직을 정리해줘. @work_process/mvp-2/D/test-D.md 내용에는 isValidProvider(provider) 함수가 정상 동작하는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+### Phase 2. localLLM 연동
+
+5. gemini 3.0 flash 모델 agent 1개를 E 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 E 단계 참고해서 E단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 E폴더 만들면서 그 폴더 내에 test-E.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/E에 research-E.md 파일로 정리해줘
+
+5-1. E 단계는 localLLM 기본 설정 Agent이므로 @work_process/mvp-2/E/research-E.md 내용에는 localLLM 기본 baseURL 정의, authType none 처리, localLLM config 검증, baseURL 누락 시 기본값 적용 로직을 정리해줘. @work_process/mvp-2/E/test-E.md 내용에는 localLLM 선택 시 기본 endpoint가 자동 적용되는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+6. gemini 3.0 flash 모델 agent 1개를 F 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 F 단계 참고해서 F단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 F폴더 만들면서 그 폴더 내에 test-F.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/F에 research-F.md 파일로 정리해줘
+
+6-1. F 단계는 localLLM 연결 확인 Agent이므로 @work_process/mvp-2/F/research-F.md 내용에는 baseURL 입력받기, /models 또는 /v1/models 요청, 연결 실패 및 timeout 처리, 사용자 안내 메시지 반환 로직을 정리해줘. @work_process/mvp-2/F/test-F.md 내용에는 로컬 LLM 서버가 켜져 있으면 연결 성공, 꺼져 있으면 안전하게 실패하는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+7. gemini 3.0 flash 모델 agent 1개를 G 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 G 단계 참고해서 G단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 G폴더 만들면서 그 폴더 내에 test-G.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/G에 research-G.md 파일로 정리해줘
+
+7-1. G 단계는 localLLM 모델 목록 조회 Agent이므로 @work_process/mvp-2/G/research-G.md 내용에는 /v1/models 호출, 응답 JSON 파싱, model.id 목록 추출, 빈 목록 및 오류 응답 처리 로직을 정리해줘. @work_process/mvp-2/G/test-G.md 내용에는 listModels(config)가 로컬 모델명 배열을 반환하는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+8. gemini 3.0 flash 모델 agent 1개를 H 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 H 단계 참고해서 H단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 H폴더 만들면서 그 폴더 내에 test-H.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/H에 research-H.md 파일로 정리해줘
+
+8-1. H 단계는 로컬 모델 선택 UI Agent이므로 @work_process/mvp-2/H/research-H.md 내용에는 prompts select UI 구현, 모델 목록을 choices로 변환, 방향키 선택, 선택한 모델명을 config에 저장하는 로직을 정리해줘. @work_process/mvp-2/H/test-H.md 내용에는 사용자가 localLLM 모델을 선택하면 modelVersion에 저장되는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+### Phase 3. API Key 인증과 클라우드 Provider
+
+9. gemini 3.0 flash 모델 agent 1개를 I 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 I 단계 참고해서 I단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 I폴더 만들면서 그 폴더 내에 test-I.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/I에 research-I.md 파일로 정리해줘
+
+9-1. I 단계는 API Key 입력 Agent이므로 @work_process/mvp-2/I/research-I.md 내용에는 비밀번호 입력 형태로 API Key 입력, 입력값 빈 값 검증, 화면 및 로그 출력 금지, credentials 저장 함수와의 연결 로직을 정리해줘. @work_process/mvp-2/I/test-I.md 내용에는 API Key가 화면과 로그에 노출되지 않고 안전하게 입력되는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+10. gemini 3.0 flash 모델 agent 1개를 J 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 J 단계 참고해서 J단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 J폴더 만들면서 그 폴더 내에 test-J.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/J에 research-J.md 파일로 정리해줘
+
+10-1. J 단계는 Credentials 저장 Agent이므로 @work_process/mvp-2/J/research-J.md 내용에는 ~/.config/convention/credentials.json 경로 정의, 파일 읽기/쓰기, 파일 권한 제한(600), config.json과 분리 저장 로직을 정리해줘. @work_process/mvp-2/J/test-J.md 내용에는 API Key가 config.json이 아니라 credentials.json에 저장되는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+11. gemini 3.0 flash 모델 agent 1개를 K 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 K 단계 참고해서 K단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 K폴더 만들면서 그 폴더 내에 test-K.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/K에 research-K.md 파일로 정리해줘
+
+11-1. K 단계는 API Key 보안 Agent이므로 @work_process/mvp-2/K/research-K.md 내용에는 로그 출력 시 API Key 마스킹, credentials 내용 출력 금지, JSON stringify 제한, 에러 메시지 키 포함 방지 로직을 정리해줘. @work_process/mvp-2/K/test-K.md 내용에는 어떤 성공/실패 메시지에도 API Key 원문이 출력되지 않는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+12. gemini 3.0 flash 모델 agent 1개를 L 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 L 단계 참고해서 L단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 L폴더 만들면서 그 폴더 내에 test-L.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/L에 research-L.md 파일로 정리해줘
+
+12-1. L 단계는 Gemini Provider Agent이므로 @work_process/mvp-2/L/research-L.md 내용에는 Gemini Provider 구현, API Key 기반 요청, prompt 전송, 텍스트 추출, 에러 및 timeout 처리 로직을 정리해줘. @work_process/mvp-2/L/test-L.md 내용에는 provider가 gemini이고 API Key가 있을 때 실제 Gemini API로 커밋 메시지를 생성하는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+13. gemini 3.0 flash 모델 agent 1개를 M 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 M 단계 참고해서 M단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 M폴더 만들면서 그 폴더 내에 test-M.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/M에 research-M.md 파일로 정리해줘
+
+13-1. M 단계는 OpenAI-compatible Provider Agent이므로 @work_process/mvp-2/M/research-M.md 내용에는 baseURL 기반 /chat/completions 호출, Authorization Bearer 처리, modelVersion 전달, messages 형식 구성 및 응답 추출 로직을 정리해줘. @work_process/mvp-2/M/test-M.md 내용에는 OpenAI-compatible endpoint를 사용하는 Provider가 공통 모듈로 호출되는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+14. gemini 3.0 flash 모델 agent 1개를 N 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 N 단계 참고해서 N단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 N폴더 만들면서 그 폴더 내에 test-N.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/N에 research-N.md 파일로 정리해줘
+
+14-1. N 단계는 Provider 라우터 Agent이므로 @work_process/mvp-2/N/research-N.md 내용에는 provider 값에 따른 mock/localLLM/gemini/openaiCompatible 분기, Provider별 generateCommitMessage 및 listModels 호출 로직을 정리해줘. @work_process/mvp-2/N/test-N.md 내용에는 core/ai.js가 Provider 세부 구현을 몰라도 커밋 메시지를 생성할 수 있는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+### Phase 4. --model 명령어
+
+15. gemini 3.0 flash 모델 agent 1개를 O 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 O 단계 참고해서 O단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 O폴더 만들면서 그 폴더 내에 test-O.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/O에 research-O.md 파일로 정리해줘
+
+15-1. O 단계는 --model CLI 라우팅 Agent이므로 @work_process/mvp-2/O/research-O.md 내용에는 commander에 --model 옵션 추가, 인자 optional 처리, provider/authType/modelVersion 수집, src/commands/model.js로 라우팅하는 로직을 정리해줘. @work_process/mvp-2/O/test-O.md 내용에는 --model 입력 시 model command로 정상 라우팅되는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+16. gemini 3.0 flash 모델 agent 1개를 P 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 P 단계 참고해서 P단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 P폴더 만들면서 그 폴더 내에 test-P.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/P에 research-P.md 파일로 정리해줘
+
+16-1. P 단계는 --model 전체 대화형 설정 Agent이므로 @work_process/mvp-2/P/research-P.md 내용에는 Provider/인증 방식/모델 버전 선택 UI 실행, 설정 저장, 완료 메시지 출력 로직을 정리해줘. @work_process/mvp-2/P/test-P.md 내용에는 convention --model 실행만으로 설정이 완료되는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+17. gemini 3.0 flash 모델 agent 1개를 Q 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 Q 단계 참고해서 Q단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 Q폴더 만들면서 그 폴더 내에 test-Q.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/Q에 research-Q.md 파일로 정리해줘
+
+17-1. Q 단계는 --model provider 부분 지정 Agent이므로 @work_process/mvp-2/Q/research-Q.md 내용에는 지정된 provider 유효성 검증, 인증 방식/모델 버전 선택 UI 실행 및 설정 저장 로직을 정리해줘. @work_process/mvp-2/Q/test-Q.md 내용에는 convention --model gemini 등 실행 시 Provider 선택 단계를 건너뛰는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+18. gemini 3.0 flash 모델 agent 1개를 R 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 R 단계 참고해서 R단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 R폴더 만들면서 그 폴더 내에 test-R.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/R에 research-R.md 파일로 정리해줘
+
+18-1. R 단계는 --model provider authType 부분 지정 Agent이므로 @work_process/mvp-2/R/research-R.md 내용에는 provider/authType 검증, API Key 필요 시 입력 확인, 모델 버전 선택 UI 실행 및 설정 저장 로직을 정리해줘. @work_process/mvp-2/R/test-R.md 내용에는 convention --model gemini api 실행 시 모델 버전 선택만 대화형으로 진행되는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+19. gemini 3.0 flash 모델 agent 1개를 S 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 S 단계 참고해서 S단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 S폴더 만들면서 그 폴더 내에 test-S.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/S에 research-S.md 파일로 정리해줘
+
+19-1. S 단계는 --model provider authType modelVersion 직접 지정 Agent이므로 @work_process/mvp-2/S/research-S.md 내용에는 모든 인자 검증, 인증 정보 확인, 대화형 UI 없이 직접 config 저장 로직을 정리해줘. @work_process/mvp-2/S/test-S.md 내용에는 모든 인자가 제공되면 interactive UI 없이 즉시 설정 저장되는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+20. gemini 3.0 flash 모델 agent 1개를 T 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 T 단계 참고해서 T단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 T폴더 만들면서 그 폴더 내에 test-T.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/T에 research-T.md 파일로 정리해줘
+
+20-1. T 단계는 Model Config 저장 Agent이므로 @work_process/mvp-2/T/research-T.md 내용에는 --model 명령의 결과를 config.json에 저장(mode, provider, authType, modelDisplayName, modelVersion, baseURL 등)하는 로직을 정리해줘. @work_process/mvp-2/T/test-T.md 내용에는 설정 후 convention 실행 시 해당 Provider를 정상 사용하는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+### Phase 5. Push/Reset
+
+21. gemini 3.0 flash 모델 agent 1개를 U 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 U 단계 참고해서 U단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 U폴더 만들면서 그 폴더 내에 test-U.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/U에 research-U.md 파일로 정리해줘
+
+21-1. U 단계는 --push Agent이므로 @work_process/mvp-2/U/research-U.md 내용에는 commander --push 옵션, 커밋 후 git push 안전 실행, 실패 처리 및 확인 정책 결정 로직을 정리해줘. @work_process/mvp-2/U/test-U.md 내용에는 convention --push 실행 시 커밋 후 원격 저장소로 push되는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+22. gemini 3.0 flash 모델 agent 1개를 V 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 V 단계 참고해서 V단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 V폴더 만들면서 그 폴더 내에 test-V.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/V에 research-V.md 파일로 정리해줘
+
+22-1. V 단계는 --reset Agent이므로 @work_process/mvp-2/V/research-V.md 내용에는 commander --reset 옵션, git reset HEAD~1 실행, 사용자 confirm, 변경 사항 보존 여부 안내 로직을 정리해줘. @work_process/mvp-2/V/test-V.md 내용에는 convention --reset 실행 시 최근 커밋이 취소되고 변경 사항은 working tree에 남는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+23. gemini 3.0 flash 모델 agent 1개를 W 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 W 단계 참고해서 W단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 W폴더 만들면서 그 폴더 내에 test-W.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/W에 research-W.md 파일로 정리해줘
+
+23-1. W 단계는 Push/Reset 안전 확인 Agent이므로 @work_process/mvp-2/W/research-W.md 내용에는 명령어 실행 전 confirm 필수 적용, 취소 시 안전 종료 처리 로직을 정리해줘. @work_process/mvp-2/W/test-W.md 내용에는 reset 등 위험 명령이 사용자 확인 없이 실행되지 않는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+### Phase 6. 통합 검증
+
+24. gemini 3.0 flash 모델 agent 1개를 X 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 X 단계 참고해서 X단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 X폴더 만들면서 그 폴더 내에 test-X.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/X에 research-X.md 파일로 정리해줘
+
+24-1. X 단계는 2차 MVP 통합 테스트 Agent이므로 @work_process/mvp-2/X/research-X.md 내용에는 1차 MVP 회귀 테스트, --model 명령 검증, API Key 저장, Provider 라우팅, push/reset 통합 테스트 계획을 정리해줘. @work_process/mvp-2/X/test-X.md 내용에는 1차/2차 MVP의 모든 기능이 정상 동작하는지 검증하는 테스트 항목을 한국어로 정리해줘.
+
+25. gemini 3.1 pro 모델 agent 1개를 배정해서, prompt의 B~X단계까지 작성된 프롬프트가 모두 작성이 완료된 이후에, init/02_mvp-2.md의 내용을 기반으로 prompt.md의 2차 MVP 내용에 있는 전반적인 내용들을 분석해서 2차 MVP 핵심 목표에 부합하는 내용들인지 최종적으로 파악하고 점검해줘.
