@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { isValidLanguage, isValidMode } from '../src/utils/validator.js';
+import { isValidLanguage, isValidMode, isValidProvider } from '../src/utils/validator.js';
 
 test('isValidMode accepts supported modes', () => {
   assert.equal(isValidMode('step'), true);
@@ -59,5 +59,29 @@ test('isValidLanguage rejects empty and missing values', () => {
 test('isValidLanguage rejects non-string values', () => {
   for (const language of [1, {}, [], true]) {
     assert.equal(isValidLanguage(language), false);
+  }
+});
+
+test('isValidProvider accepts 2nd MVP supported providers', () => {
+  for (const provider of ['mock', 'localLLM', 'gemini', 'openaiCompatible']) {
+    assert.equal(isValidProvider(provider), true);
+  }
+});
+
+test('isValidProvider rejects unsupported and future provider names', () => {
+  for (const provider of ['claude', 'github-copilot', 'antigravity', 'unknown']) {
+    assert.equal(isValidProvider(provider), false);
+  }
+});
+
+test('isValidProvider rejects empty and missing values', () => {
+  assert.equal(isValidProvider(''), false);
+  assert.equal(isValidProvider(null), false);
+  assert.equal(isValidProvider(undefined), false);
+});
+
+test('isValidProvider rejects non-string values', () => {
+  for (const provider of [1, {}, [], true]) {
+    assert.equal(isValidProvider(provider), false);
   }
 });
