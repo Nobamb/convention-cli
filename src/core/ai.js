@@ -1,4 +1,4 @@
-import { generate as generateMockCommitMessage } from '../providers/mock.js';
+import { generateWithProvider } from '../providers/index.js';
 import { error as logError } from '../utils/logger.js';
 
 // Conventional Commits 형식을 판별하기 위한 정규식입니다.
@@ -23,16 +23,7 @@ function assertNonEmptyString(value, name) {
  */
 export async function generateCommitMessage(prompt, config = {}) {
   assertNonEmptyString(prompt, 'prompt');
-
-  const provider = config?.provider ?? null;
-
-  // 1차 MVP: 별도 설정이 없거나 mock으로 지정된 경우 Mock Provider 사용
-  if (provider === null || provider === 'mock') {
-    return generateMockCommitMessage(prompt, config);
-  }
-
-  // 지원하지 않는 Provider가 설정된 경우 조용히 넘어가지 않고 에러를 발생시킵니다.
-  throw new Error(`Unsupported provider: ${provider}`);
+  return generateWithProvider({ prompt, config });
 }
 
 /**
