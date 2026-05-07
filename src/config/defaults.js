@@ -24,3 +24,21 @@ export const SUPPORTED_MODES = ["step", "batch"];
 
 // CLI 설정값 검증과 prompt 언어 선택에서 재사용할 수 있는 지원 언어 목록입니다.
 export const SUPPORTED_LANGUAGES = ["ko", "en", "jp", "cn"];
+
+// 2차 MVP에서 실제 설정 및 라우팅 대상으로 다루는 Provider 목록입니다.
+export const PROVIDERS = ["mock", "localLLM", "gemini", "openaiCompatible"];
+
+// 향후 확장 후보를 상태별로 분리해 두되, validator는 PROVIDERS만 통과시킵니다.
+export const STABLE_PROVIDERS = [
+  "gemini",
+  "github-copilot",
+  "codex",
+  "claude",
+  "grok",
+  "deepseek",
+  "kimi",
+  "glm",
+  "localLLM",
+];
+
+export const EXPERIMENTAL_PROVIDERS = ["antigravity", "manus"];
