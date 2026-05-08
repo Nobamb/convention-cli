@@ -25,10 +25,21 @@ export const SUPPORTED_MODES = ["step", "batch"];
 // CLI 설정값 검증과 prompt 언어 선택에서 재사용할 수 있는 지원 언어 목록입니다.
 export const SUPPORTED_LANGUAGES = ["ko", "en", "jp", "cn"];
 
-// 2차 MVP에서 실제 설정 및 라우팅 대상으로 다루는 Provider 목록입니다.
+/**
+ * 2차 MVP에서 실제 설정 및 라우팅 대상으로 다루는 Provider 목록입니다.
+ * mock(테스트용), localLLM(로컬 서버용), gemini(클라우드용) 등이 포함됩니다.
+ */
 export const PROVIDERS = ["mock", "localLLM", "gemini", "openaiCompatible"];
 
-// 향후 확장 후보를 상태별로 분리해 두되, validator는 PROVIDERS만 통과시킵니다.
+/**
+ * localLLM의 기준 endpoint입니다. Ollama의 기본 포트인 11434를 기본값으로 사용합니다.
+ * OpenAI 호환 API를 제공하는 서버들이 주로 사용하는 `/v1` 경로를 포함합니다.
+ */
+export const DEFAULT_LOCAL_LLM_BASE_URL = "http://localhost:11434/v1";
+
+/**
+ * 지원 계획이 확정된 Stable Provider와 실험적인 Experimental Provider를 분리하여 정의합니다.
+ */
 export const STABLE_PROVIDERS = [
   "gemini",
   "github-copilot",
@@ -41,4 +52,7 @@ export const STABLE_PROVIDERS = [
   "localLLM",
 ];
 
+/**
+ * 실험적인 Provider 목록입니다.
+ */
 export const EXPERIMENTAL_PROVIDERS = ["antigravity", "manus"];
