@@ -201,7 +201,7 @@ test('getFullDiff includes staged, unstaged, staged new, deleted, and Korean tra
   });
 });
 
-test('getFullDiff excludes untracked-only and sensitive file diffs', { skip: skipWithoutGit }, async () => {
+test('getFullDiff includes untracked new files and excludes sensitive file diffs', { skip: skipWithoutGit }, async () => {
   await withRepo((repoDir) => {
     writeFile(repoDir, 'untracked-only.js', 'untracked content\n');
     writeFile(repoDir, '.env', 'TOKEN=secret\n');
@@ -210,7 +210,9 @@ test('getFullDiff excludes untracked-only and sensitive file diffs', { skip: ski
 
     const diff = getFullDiff();
 
-    assert.equal(diff.includes('untracked-only.js'), false);
+    assert.match(diff, /untracked-only\.js/);
+    assert.match(diff, /new file mode/);
+    assert.match(diff, /untracked content/);
     assert.equal(diff.includes('.env'), false);
     assert.equal(diff.includes('private.pem'), false);
     assert.equal(diff.includes('TOKEN=secret'), false);
@@ -297,7 +299,7 @@ test('getFileDiffs handles space, Korean, deleted, and staged new filenames', { 
   });
 });
 
-test('getFileDiffs excludes untracked-only, clean, empty, non-string, and sensitive files', { skip: skipWithoutGit }, async () => {
+test('getFileDiffs includes untracked new files and excludes clean, empty, non-string, and sensitive files', { skip: skipWithoutGit }, async () => {
   await withRepo((repoDir) => {
     writeFile(repoDir, 'untracked.js', 'untracked\n');
     writeFile(repoDir, 'README.md', 'changed readme\n');
@@ -315,9 +317,39 @@ test('getFileDiffs excludes untracked-only, clean, empty, non-string, and sensit
       'README.md',
     ]);
 
-    assert.deepEqual(fileDiffs.map(({ file }) => file), ['README.md']);
-    assert.equal(fileDiffs[0].diff.includes('PASSWORD=secret'), false);
-    assert.equal(fileDiffs[0].diff.includes('PRIVATE_KEY=secret'), false);
+    assert.deepEqual(fileDiffs.map(({ file }) => file), ['untracked.js', 'README.md']);
+    assert.match(fileDiffs[0].diff, /new file mode/);
+    assert.match(fileDiffs[0].diff, /untracked/);
+    assert.equal(fileDiffs.some(({ diff }) => diff.includes('PASSWORD=secret')), false);
+    assert.equal(fileDiffs.some(({ diff }) => diff.includes('PRIVATE_KEY=secret')), false);
+  });
+});
+
+test('getFileDiffs handles untracked space and Korean filenames', { skip: skipWithoutGit }, async () => {
+  await withRepo((repoDir) => {
+    writeFile(repoDir, 'new file with space.js', 'space new file\n');
+    writeFile(repoDir, KOREAN_NEW_FILE, 'Korean new file\n');
+
+    const fileDiffs = getFileDiffs(['new file with space.js', KOREAN_NEW_FILE]);
+
+    assert.deepEqual(fileDiffs.map(({ file }) => file), ['new file with space.js', KOREAN_NEW_FILE]);
+    assert.match(fileDiffs[0].diff, /new file with space\.js/);
+    assert.match(fileDiffs[0].diff, /space new file/);
+    assert.match(fileDiffs[1].diff, new RegExp(KOREAN_NEW_FILE.replace('.', '\\.')));
+    assert.match(fileDiffs[1].diff, /Korean new file/);
+  });
+});
+
+test('getChangedFiles expands untracked directories to file paths', { skip: skipWithoutGit }, async () => {
+  await withRepo((repoDir) => {
+    writeFile(repoDir, 'docs/new-guide.md', 'new guide\n');
+    writeFile(repoDir, 'docs/nested/new-note.md', 'new note\n');
+
+    const changedFiles = getChangedFiles();
+
+    assert.equal(changedFiles.includes('docs/new-guide.md'), true);
+    assert.equal(changedFiles.includes('docs/nested/new-note.md'), true);
+    assert.equal(changedFiles.includes('docs/'), false);
   });
 });
 
