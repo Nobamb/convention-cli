@@ -136,6 +136,7 @@ test('runBatchCommit creates one commit for committable changed files', { skip: 
   await withRepo(async (repoDir) => {
     saveRuntimeConfig({ mode: 'batch' });
     writeFile(repoDir, 'README.md', 'batch readme change\n');
+    writeFile(repoDir, 'docs/new-guide.md', 'new guide content\n');
     writeFile(repoDir, '.env', 'TOKEN=should-not-commit\n');
 
     await commands.runBatchCommit();
@@ -147,6 +148,7 @@ test('runBatchCommit creates one commit for committable changed files', { skip: 
     assert.equal(messages.filter((message) => message === 'chore: update project files').length, 1);
     assert.match(status, /^\?\? \.env/m);
     assert.equal(status.includes('README.md'), false);
+    assert.equal(status.includes('docs/new-guide.md'), false);
   });
 });
 
@@ -155,12 +157,13 @@ test('runStepCommit creates one commit per committable file', { skip: skipWithou
     saveRuntimeConfig({ mode: 'step' });
     writeFile(repoDir, 'README.md', 'step readme change\n');
     writeFile(repoDir, 'src/app.js', 'console.log("changed");\n');
+    writeFile(repoDir, 'docs/new-step-guide.md', 'new step guide\n');
 
     await commands.runStepCommit();
 
     const messages = getCommitMessages(repoDir);
 
-    assert.equal(messages.filter((message) => message === 'chore: update project files').length, 2);
+    assert.equal(messages.filter((message) => message === 'chore: update project files').length, 3);
     assert.equal(getStatus(repoDir), '');
   });
 });
