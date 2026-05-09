@@ -7,7 +7,7 @@ import {
   runDefaultCommit,
   runStepCommit,
 } from "../src/commands/commit.js";
-import { setLanguage, setMode } from "../src/commands/config.js";
+import { runQuestionSetup, setLanguage, setMode } from "../src/commands/config.js";
 import { runModelSetup } from "../src/commands/model.js";
 
 /**
@@ -49,6 +49,10 @@ program
     "커밋 메시지 생성 언어를 설정합니다. 사용 가능 값: ko, en, jp, cn",
   )
   .option(
+    "-q, --question",
+    "커밋 메시지 생성 후 커밋 여부를 물어볼지 설정합니다. true 또는 false를 선택합니다.",
+  )
+  .option(
     "--model [values...]",
     "AI Provider/model 설정을 저장합니다. [provider] [authType] [modelVersion] 순으로 입력하거나, 인자 없이 실행 시 대화형 설정을 시작합니다.",
   );
@@ -78,6 +82,11 @@ async function main() {
   }
 
   // 기본 실행 모드 변경
+  if (options.question) {
+    await runQuestionSetup();
+    return;
+  }
+
   if (options.setMode) {
     // 기본 실행 모드를 설정합니다.
     setMode(options.setMode);
