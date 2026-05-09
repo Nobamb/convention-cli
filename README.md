@@ -80,6 +80,11 @@ convention --set-mode batch
 
 # Set the default language for commit messages (e.g., English)
 convention --language en
+
+# Choose whether Convention CLI asks before committing generated messages
+convention --question
+# Short alias
+convention -q
 ```
 
 ---
@@ -132,6 +137,12 @@ convention --set-mode batch
 
 # 커밋 메시지 언어를 한국어로 설정
 convention --language ko
+
+# 커밋 메시지 생성 후 커밋 여부를 물어볼지 설정
+convention --question
+
+# 짧은 옵션
+convention -q
 ```
 
 기본 설정 파일은 `~/.config/convention/config.json`에 저장합니다. 1차 MVP의 기본 언어는 `ko`, 기본 모드는 `step`, `confirmBeforeCommit` 값은 `true`입니다.
@@ -143,3 +154,9 @@ convention --language ko
 - 외부 AI로 diff를 보내기 전에는 사용자 확인과 민감정보 탐지가 필요합니다.
 - 커밋 메시지가 생성되어도 사용자 확인 없이 `git commit`을 자동 실행하지 않습니다.
 - `.env`, private key, credentials 파일처럼 민감할 수 있는 파일은 diff 분석 대상에서 제외해야 합니다.
+## 커밋 확인 질문 설정
+
+`convention --question` 또는 `convention -q`는 방향키로 `true` 또는 `false`를 선택해 `confirmBeforeCommit` 값을 저장합니다. 기본값은 `true`입니다.
+
+- `true`: 생성된 커밋 메시지로 커밋할지 먼저 물어봅니다.
+- `false`: 묻지 않고 바로 staging 및 commit을 진행합니다.
