@@ -206,6 +206,9 @@ test-A.md라는 파일을 한국어로 적어줘
 
 8-1. H 단계는 로컬 모델 선택 UI Agent이므로 @work_process/mvp-2/H/research-H.md 내용에는 prompts select UI 구현, 모델 목록을 choices로 변환, 방향키 선택, 선택한 모델명을 config에 저장하는 로직을 정리해줘. @work_process/mvp-2/H/test-H.md 내용에는 사용자가 localLLM 모델을 선택하면 modelVersion에 저장되는지 확인하는 테스트 항목을 한국어로 정리해줘.
 
+
+8-2. localLLM을 연동하여 실행을 해보았을 때, 기존에 바뀐 문서에 대해서는 convention을 실행하면 바로 적용이 되는데 새로 문서를 만들게 될 때에는 이에 대해서 동작이 되지 않아 일단 새로운 문서를 만들었을 때에도 이에 대한 깃 컨벤션을 적용하는 코드에 대해 문서와 테스트 코드를 작성해줘. 기존에 코드가 변경된 파일 외에도 새로 생성된 파일에 대해서도 convention이 적용되어야 해 새로 문서를 만든 파일에 대해서는 그 파일에 대한 전체적인 내용을 파악해서 그 내용에 대한 깃 컨벤션을 적용하게 하면 돼
+
 ### Phase 3. API Key 인증과 클라우드 Provider
 
 9. gemini 3.0 flash 모델 agent 1개를 I 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 I 단계 참고해서 I단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 I폴더 만들면서 그 폴더 내에 test-I.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/I에 research-I.md 파일로 정리해줘
