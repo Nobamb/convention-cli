@@ -2,7 +2,8 @@ import { DEFAULT_LOCAL_LLM_BASE_URL } from "../config/defaults.js";
 import { isValidBaseURL } from "../utils/validator.js";
 
 // 로컬 서버가 꺼져 있거나 응답이 늦을 경우 CLI가 무한히 대기하는 것을 방지하기 위한 Timeout(기본 5초)
-const DEFAULT_TIMEOUT_MS = 5000;
+// 로컬 LLM의 생성(Inference) 작업은 시간이 오래 걸릴 수 있으므로 별도의 긴 타임아웃(기본 60초)을 설정합니다.
+const DEFAULT_GENERATE_TIMEOUT_MS = 60000;
 
 /**
  * localLLM 설정을 실제 요청에 사용할 수 있는 형태로 정규화합니다.
@@ -189,10 +190,10 @@ export async function generateCommitMessage({ prompt, config = {} }) {
   // AbortController 지정
   const controller = new AbortController();
   // setTimeout으로 Timeout 설정
-  // 5초 내에 응답이 없으면 AbortController를 호출하여 요청을 중단
+  // 60초(기본값) 내에 응답이 없으면 AbortController를 호출하여 요청을 중단
   const timeout = setTimeout(
     () => controller.abort(),
-    normalizedConfig.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    normalizedConfig.timeoutMs ?? DEFAULT_GENERATE_TIMEOUT_MS,
   );
 
   try {
