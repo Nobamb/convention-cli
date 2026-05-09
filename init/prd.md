@@ -432,15 +432,15 @@ localLLM처럼 별도 인증이 필요하지 않은 Provider는 authType을 none
 
 convention --model 사용 패턴
 
-1. 전체 대화형 설정
+   전체 대화형 설정
    convention --model
    AI Agent Provider, 인증 방식, 모델 버전을 모두 대화형 UI에서 선택합니다.
-1. AI Agent Provider 선택
-1. OAuth/API Key/None 인증 방식 선택
-1. 모델 버전 선택
-1. 설정 저장
+   AI Agent Provider 선택
+   OAuth/API Key/None 인증 방식 선택
+   모델 버전 선택
+   설정 저장
 
-1. Provider만 지정
+Provider만 지정
    convention --model gemini
    gemini를 사용할 AI Agent Provider로 지정하고, 이후 인증 방식과 모델 버전만 대화형 UI로 선택합니다.
    ? Gemini를 어떤 방식으로 사용할까요?
@@ -454,7 +454,7 @@ convention --model 사용 패턴
 > gemini 2.5 pro
 > gemini 2.5 flash
 
-3. Provider + 인증 방식 지정
+Provider + 인증 방식 지정
    convention --model gemini oauth
    gemini와 oauth 방식을 지정하고, 모델 버전만 대화형 UI로 선택합니다.
    ? 사용할 Gemini 모델 버전을 선택하세요:
@@ -464,7 +464,7 @@ convention --model 사용 패턴
    > gemini 2.5 pro
    > gemini 2.5 flash
 
-4. Provider + 인증 방식 + 모델 버전까지 한 번에 지정
+Provider + 인증 방식 + 모델 버전까지 한 번에 지정
    convention --model gemini oauth "3.1 pro"
    AI Agent Provider, 인증 방식, 모델 버전을 한 번에 지정합니다.
    이 경우 대화형 UI 없이 바로 설정을 저장합니다.
@@ -603,6 +603,19 @@ convention -h
 현재 사용할 수 있는 명령어와 옵션 설명을 출력합니다.
 
 ---
+
+
+8-5. 커밋 확인 질문 설정
+
+사용자는 `convention --question` 또는 `convention -q`로 커밋 메시지 생성 후 확인 질문을 사용할지 설정할 수 있습니다.
+
+- `true`: 기본값입니다. AI가 생성한 커밋 메시지를 보여주고, 이 메시지로 커밋할지 사용자에게 확인합니다.
+- `false`: 확인 질문을 생략합니다. `convention` 실행 시 메시지를 생성한 뒤 바로 `git add`와 `git commit`을 실행합니다.
+- 설정값은 `~/.config/convention/config.json`의 `confirmBeforeCommit`에 저장합니다.
+- 설정 변경은 방향키 선택 UI로 제공하며, 실행 후 커밋 플로우를 수행하지 않습니다.
+- 도움말에는 `-q, --question` 옵션과 true/false 의미를 포함합니다.
+
+
 
 9. 설치 및 배포 방식
 
