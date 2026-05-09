@@ -90,3 +90,12 @@
 
 - **모든 항목 통과 시:** Phase O 완료 및 batch 모드 prompt 생성 단계 진입 가능
 - **실패 항목 존재 시:** `git diff HEAD` 사용 여부, staged 포함 여부, `core.quotepath=false`, raw diff 로그 금지, untracked 한계 문서화를 우선 점검합니다.
+
+## 8-2. 신규 untracked 파일 테스트 갱신
+
+`init/prompt.md` 8-2 기준에 따라 untracked-only 신규 파일은 더 이상 제외 대상이 아닙니다.
+
+- 새 파일을 만들고 `git add` 하지 않은 상태에서 `getFullDiff()`를 호출하면 `new file mode`와 파일 내용이 포함되어야 합니다.
+- 새 디렉터리 아래 여러 파일을 만들면 `git status --porcelain -uall` 기준으로 파일 단위 diff가 생성되어야 합니다.
+- `.env`, `.env.local`, `*.pem`, `*.key`, `credentials.json`, `secrets.json` 같은 민감 신규 파일은 diff에 포함되지 않아야 합니다.
+- batch commit flow에서는 신규 일반 파일이 confirm 이후 `git add` 및 `git commit`까지 한 번에 처리되어야 합니다.
