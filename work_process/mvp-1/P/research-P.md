@@ -107,3 +107,13 @@ fileDiffs.push({ file, diff });
 ## 10. 다음 단계
 
 Phase P의 결과는 Phase W step commit flow에서 파일별 prompt 생성, Mock AI 메시지 생성, 파일별 confirm, 파일별 `git add` 및 `git commit` 순서로 연결됩니다.
+
+## 8-2. 신규 untracked 파일 처리 갱신
+
+`init/prompt.md` 8-2 요구에 따라 `getFileDiffs(files)`는 untracked-only 신규 파일도 diff 대상으로 처리합니다.
+
+- tracked/staged 파일은 `git diff HEAD -- <file>` 기준을 유지합니다.
+- untracked-only 파일은 실제 staging 없이 `git diff --no-index -- /dev/null <file>`로 synthetic new-file diff를 생성합니다.
+- `git diff --no-index`는 차이가 있을 때 exit code `1`을 반환하므로, 이 경우 stdout을 정상 diff로 사용합니다.
+- 이 diff는 step 모드에서 파일별 prompt 생성에 사용되고, 사용자가 승인한 뒤에만 `addFile(file)`과 `commit(message, [file])`이 실행됩니다.
+- 민감 파일 제외 기준은 기존과 동일하게 먼저 적용합니다.
