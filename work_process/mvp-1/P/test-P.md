@@ -96,3 +96,13 @@
 
 - **모든 항목 통과 시:** Phase P 완료 및 Phase W step commit flow 진입 가능
 - **실패 항목 존재 시:** `--` pathspec 구분자, argv 배열 파일 경로 전달, `core.quotepath=false`, 빈 diff 제외, untracked-only 처리, raw diff 로그 금지를 우선 점검합니다.
+
+## 8-2. 신규 untracked 파일 테스트 갱신
+
+`init/prompt.md` 8-2 기준에 따라 `getFileDiffs(files)`는 아직 staging하지 않은 신규 파일도 반환해야 합니다.
+
+- `untracked.js`를 만들고 `git add` 없이 `getFileDiffs(["untracked.js"])`를 호출하면 `{ file, diff }`가 반환되어야 합니다.
+- 반환 diff에는 `diff --git`, `new file mode`, 신규 파일 전체 내용이 포함되어야 합니다.
+- 공백 포함 파일명과 한글 파일명의 untracked 신규 파일도 pathspec 문제 없이 diff가 생성되어야 합니다.
+- 민감 신규 파일은 파일 목록에 있어도 `{ file, diff }` 결과에서 제외되어야 합니다.
+- step commit flow에서는 신규 일반 파일이 confirm 이후 파일별 `git add`와 `git commit`까지 처리되어야 합니다.
