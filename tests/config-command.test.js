@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test, { after, before, beforeEach } from 'node:test';
+import prompts from 'prompts';
 
 import { DEFAULT_CONFIG } from '../src/config/defaults.js';
 
@@ -28,6 +29,8 @@ beforeEach(() => {
   if (store && fs.existsSync(store.CONFIG_DIR)) {
     fs.rmSync(store.CONFIG_DIR, { recursive: true, force: true });
   }
+
+  prompts.inject([]);
 });
 
 after(() => {
@@ -254,4 +257,88 @@ test('T-16 invalid language values do not modify config file contents', () => {
 
   const after = fs.readFileSync(store.CONFIG_FILE_PATH, 'utf8');
   assert.equal(after, before);
+});
+
+test('T-17 setQuestion(true) stores confirmBeforeCommit true', () => {
+  store.saveConfig({
+    ...DEFAULT_CONFIG,
+    confirmBeforeCommit: false,
+  });
+
+  commands.setQuestion(true);
+
+  assert.equal(store.loadConfig().confirmBeforeCommit, true);
+});
+
+test('T-18 setQuestion(false) stores confirmBeforeCommit false', () => {
+  store.saveConfig({
+    ...DEFAULT_CONFIG,
+    confirmBeforeCommit: true,
+  });
+
+  commands.setQuestion(false);
+
+  assert.equal(store.loadConfig().confirmBeforeCommit, false);
+});
+
+test('T-19 setQuestion preserves existing config values', () => {
+  const existingConfig = {
+    ...DEFAULT_CONFIG,
+    mode: 'batch',
+    language: 'en',
+    provider: 'localLLM',
+    authType: 'none',
+    modelVersion: 'qwen2.5:7b',
+    modelDisplayName: 'qwen2.5:7b',
+    baseURL: 'http://localhost:11434/v1',
+    confirmBeforeCommit: true,
+  };
+  store.saveConfig(existingConfig);
+
+  commands.setQuestion(false);
+
+  assert.deepEqual(store.loadConfig(), {
+    ...existingConfig,
+    confirmBeforeCommit: false,
+  });
+});
+
+test('T-20 setQuestion creates config from DEFAULT_CONFIG when config file is missing', () => {
+  assert.equal(fs.existsSync(store.CONFIG_FILE_PATH), false);
+
+  commands.setQuestion(false);
+
+  assert.equal(fs.existsSync(store.CONFIG_FILE_PATH), true);
+  assert.deepEqual(store.loadConfig(), {
+    ...DEFAULT_CONFIG,
+    confirmBeforeCommit: false,
+  });
+});
+
+test('T-21 invalid question values do not modify config file contents', () => {
+  store.saveConfig({
+    ...DEFAULT_CONFIG,
+    confirmBeforeCommit: true,
+  });
+  const before = fs.readFileSync(store.CONFIG_FILE_PATH, 'utf8');
+
+  commands.setQuestion('false');
+  commands.setQuestion(null);
+  commands.setQuestion(undefined);
+
+  const after = fs.readFileSync(store.CONFIG_FILE_PATH, 'utf8');
+  assert.equal(after, before);
+});
+
+test('T-22 runQuestionSetup stores selected prompt value', async () => {
+  store.saveConfig({
+    ...DEFAULT_CONFIG,
+    confirmBeforeCommit: true,
+  });
+  prompts.inject([false]);
+
+  const nextConfig = await commands.runQuestionSetup();
+
+  assert.equal(nextConfig.confirmBeforeCommit, false);
+  assert.equal(store.loadConfig().confirmBeforeCommit, false);
 });
