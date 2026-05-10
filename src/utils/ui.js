@@ -49,6 +49,25 @@ export function toSelectChoices(values) {
   }));
 }
 
+export async function selectConfirmBeforeCommit(currentValue = true) {
+  const response = await prompts({
+    type: "select",
+    name: "confirmBeforeCommit",
+    message: "커밋 메시지 생성 후 커밋 여부를 물어볼까요?",
+    choices: [
+      { title: "true - 커밋 전에 물어보기", value: true },
+      { title: "false - 물어보지 않고 바로 커밋", value: false },
+    ],
+    initial: currentValue === false ? 1 : 0,
+  });
+
+  if (typeof response.confirmBeforeCommit !== "boolean") {
+    throw new Error("커밋 확인 설정이 취소되었습니다.");
+  }
+
+  return response.confirmBeforeCommit;
+}
+
 /**
  * 특정 Provider(주로 localLLM)에서 조회한 모델 목록을 사용자에게 보여주고 하나를 선택하게 합니다.
  *
