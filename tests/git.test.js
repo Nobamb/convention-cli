@@ -139,10 +139,10 @@ test('git core implementation avoids unsafe execution and logging patterns', () 
   assert.equal(/shell\s*:\s*true/.test(source), false);
   assert.equal(/console\./.test(source), false);
   assert.equal(source.includes('reset'), false);
-  assert.match(source, /\['add', '-A'\]/);
-  assert.match(source, /\['add', '--', file\]/);
-  assert.match(source, /\['commit', '-m', message\]/);
-  assert.match(source, /encoding: 'utf8'/);
+  assert.match(source, /\[["']add["'], ["']-A["']\]/);
+  assert.match(source, /\[["']add["'], ["']--["'], file\]/);
+  assert.match(source, /\[["']commit["'], ["']-m["'], message\]/);
+  assert.match(source, /encoding: ["']utf8["']/);
 });
 
 test('getChangedFiles returns an empty array for a clean repository', { skip: skipWithoutGit }, async () => {
