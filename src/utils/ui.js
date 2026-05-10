@@ -49,6 +49,11 @@ export function toSelectChoices(values) {
   }));
 }
 
+/**
+ * 커밋 전 확인 질문을 설정합니다.
+ * @param {boolean} currentValue - 기존 설정 값
+ * @returns {Promise<boolean>} - 변경된 설정 값
+ */
 export async function selectConfirmBeforeCommit(currentValue = true) {
   const response = await prompts({
     type: "select",
@@ -58,13 +63,16 @@ export async function selectConfirmBeforeCommit(currentValue = true) {
       { title: "true - 커밋 전에 물어보기", value: true },
       { title: "false - 물어보지 않고 바로 커밋", value: false },
     ],
+    // 기본값을 설정합니다.
     initial: currentValue === false ? 1 : 0,
   });
 
+  // 사용자가 ESC 등을 눌러 선택을 취소한 경우 처리
   if (typeof response.confirmBeforeCommit !== "boolean") {
     throw new Error("커밋 확인 설정이 취소되었습니다.");
   }
 
+  // 커밋 확인 설정 값 반환
   return response.confirmBeforeCommit;
 }
 
