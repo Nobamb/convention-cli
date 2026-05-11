@@ -206,12 +206,9 @@ test-A.md라는 파일을 한국어로 적어줘
 
 8-1. H 단계는 로컬 모델 선택 UI Agent이므로 @work_process/mvp-2/H/research-H.md 내용에는 prompts select UI 구현, 모델 목록을 choices로 변환, 방향키 선택, 선택한 모델명을 config에 저장하는 로직을 정리해줘. @work_process/mvp-2/H/test-H.md 내용에는 사용자가 localLLM 모델을 선택하면 modelVersion에 저장되는지 확인하는 테스트 항목을 한국어로 정리해줘.
 
-
 8-2. localLLM을 연동하여 실행을 해보았을 때, 기존에 바뀐 문서에 대해서는 convention을 실행하면 스테이징을 따로 하지 않은 상태에서도 바로 적용이 되는데 새로 문서를 만들게 될 때에는 깃 스테이징을 안한 상태에서는 이에 대해서 동작이 되지 않아 새로 만든 파일에 대해서는 수동으로 스테이징을 해야 동작이 되는 상태거든 일단 새로운 문서를 만들었을 때에도 이에 대한 깃 컨벤션을 스테이징 및 커밋까지 한번에 적용하는 코드에 대해 문서와 테스트 코드를 작성해줘. 기존에 코드가 변경된 파일 외에도 새로 생성된 파일에 대해서도 convention이 적용되어야 해 새로 문서를 만든 파일에 대해서는 그 파일에 대한 전체적인 내용을 파악해서 그 내용에 대한 깃 컨벤션을 적용하게 하면 돼
 
-
 8-3. 이번에는 깃 컨벤션에 대한 메시지를 생성할 때 이에 대해 이 메시지로 커밋할 것인지 물어보는 것을 설정으로 제어할 수 있었으면 좋겠어 우선 커밋에 대해 물어보는 것을 기본 설정값으로 하고, convention --question 또는 convention -q를 터미널에 입력하게 되면 메시지에 대해 물어볼 것인지 설정을 바꿀 수 있도록 해야 돼 각각의 값은 윗방향키, 아랫 방향키로 설정해서 엔터를 입력하면 각 설정값으로 변경할 수 있도록 해야 해 true와 false로 설정할 수 있으며 true는 커밋에 대해 물어보는 것이고, false는 물어보지 않는 형태로 하면 돼 그리고 false일 때에는 convention을 실행하면 메시지를 알아서 작성해서 커밋하는 형태로 작업을 해야 돼 이 작업 내용에 대해서 init/02_mvp-2.md 및 init/prd.md에 추가해주고, convention --help를 했을 때에도 이 내용이 추가되어야 하고, README.md에서도 사용법 부분에 해당 내용이 추가로 들어가야 돼
-
 
 ### Phase 3. API Key 인증과 클라우드 Provider
 
@@ -238,6 +235,8 @@ test-A.md라는 파일을 한국어로 적어줘
 14. gemini 3.0 flash 모델 agent 1개를 N 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 N 단계 참고해서 N단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 N폴더 만들면서 그 폴더 내에 test-N.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/N에 research-N.md 파일로 정리해줘
 
 14-1. N 단계는 Provider 라우터 Agent이므로 @work_process/mvp-2/N/research-N.md 내용에는 provider 값에 따른 mock/localLLM/gemini/openaiCompatible 분기, Provider별 generateCommitMessage 및 listModels 호출 로직을 정리해줘. @work_process/mvp-2/N/test-N.md 내용에는 core/ai.js가 Provider 세부 구현을 몰라도 커밋 메시지를 생성할 수 있는지 확인하는 테스트 항목을 한국어로 정리해줘.
+
+14-2. dangeroud/dangeroud1.md 파일의 보안 위험성을 참고해서 각각의 보안 이슈를 해결할 수 있도록 추가적인 작업 절차를 진행해주면 좋겠어 각각의 위험 1~6을 확인하면서 보안 문제가 발생하지 않도록 우선순위 권장 조치에 적힌 내용에 따라서 우선적으로 처리를 해줘
 
 ### Phase 4. --model 명령어
 
