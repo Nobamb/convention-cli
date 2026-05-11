@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { afterEach, beforeEach } from 'node:test';
 
-import { error, info, success, warn } from '../src/utils/logger.js';
+import { error, info, redactSecrets, success, warn } from '../src/utils/logger.js';
 
 let originalLog;
 let originalError;
@@ -72,4 +72,38 @@ test('logger functions return undefined', () => {
   assert.equal(error('bad'), undefined);
   assert.equal(warn('careful'), undefined);
   assert.equal(info('note'), undefined);
+});
+
+test('redactSecrets masks common API key and bearer token variants', () => {
+  assert.equal(redactSecrets('apiKey=abc123'), 'apiKey=[REDACTED]');
+  assert.equal(redactSecrets('api_key: abc123'), 'api_key: [REDACTED]');
+  assert.equal(redactSecrets('api-key="abc123"'), 'api-key="[REDACTED]"');
+  assert.equal(redactSecrets('"apiKey": "abc123"'), '"apiKey": "[REDACTED]"');
+  assert.equal(redactSecrets("'token': 'abc123'"), "'token': '[REDACTED]'");
+  assert.equal(redactSecrets('PASSWORD = abc123'), 'PASSWORD = [REDACTED]');
+  assert.equal(
+    redactSecrets('Authorization: Bearer abc.def.ghi'),
+    'Authorization: Bearer [REDACTED]',
+  );
+  assert.equal(
+    redactSecrets('Authorization: "Bearer abc.def.ghi"'),
+    'Authorization: "Bearer [REDACTED]"',
+  );
+  assert.equal(
+    redactSecrets('"authorization": "Bearer abc.def.ghi"'),
+    '"authorization": "Bearer [REDACTED]"',
+  );
+  assert.equal(
+    redactSecrets('failed https://user:secret@example.test/v1?api_key=abc&token=def'),
+    'failed https://[REDACTED]@example.test/v1?api_key=[REDACTED]&token=[REDACTED]',
+  );
+});
+
+test('error redacts secrets before writing to console.error', () => {
+  error('request failed: Authorization: Bearer abc.def and api_key=secret-key');
+
+  assert.equal(errorCalls.length, 1);
+  assert.match(errorCalls[0], /Authorization: Bearer \[REDACTED\]/);
+  assert.match(errorCalls[0], /api_key=\[REDACTED\]/);
+  assert.doesNotMatch(errorCalls[0], /abc\.def|secret-key/);
 });
