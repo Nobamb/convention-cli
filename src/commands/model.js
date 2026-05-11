@@ -1,13 +1,11 @@
-import {
-  DEFAULT_LOCAL_LLM_BASE_URL,
-  PROVIDERS,
-} from "../config/defaults.js";
+import { DEFAULT_LOCAL_LLM_BASE_URL, PROVIDERS } from "../config/defaults.js";
 import { loadConfig, saveConfig } from "../config/store.js";
 import { getApiKey, promptApiKey, saveApiKey } from "../auth/apiKey.js";
 import { listProviderModels } from "../providers/index.js";
 import { normalizeLocalLLMConfig } from "../providers/localLLM.js";
-import { success } from "../utils/logger.js";
+import { success, warn } from "../utils/logger.js";
 import {
+  confirmExternalProviderRequest,
   selectAuthType,
   selectModelVersion,
   selectProvider,
@@ -122,6 +120,37 @@ function getAuthTypesForProvider(provider) {
  * @param {string} params.authType
  * @param {string} params.modelVersion
  */
+async function confirmExternalModelListRequest(config) {
+  // openaiCompatible provider 이외에는 모델 목록 조회가 필요 없으므로 true 반환
+  if (config.provider !== "openaiCompatible") {
+    return true;
+  }
+
+  // openaiCompatible provider는 모델 목록 조회가 필요하므로 사용자 확인
+  const confirmed = await confirmExternalProviderRequest({
+    provider: config.provider,
+    action: "request the model list from the configured endpoint",
+    baseURL: config.baseURL,
+  });
+
+  // 사용자가 모델 목록 조회를 취소한 경우 경고 메시지 출력
+  if (!confirmed) {
+    warn(
+      "External provider model list request was canceled. No provider request was performed.",
+    );
+  }
+
+  return confirmed;
+}
+
+/**
+ * 대화형 설정을 통해 모델 구성을 진행합니다.
+ * @param {object} params
+ * @param {string} params.provider
+ * @param {string} params.authType
+ * @param {string} params.modelVersion
+ */
+
 export async function setupModelInteractively({
   provider,
   authType,
@@ -137,6 +166,7 @@ export async function setupModelInteractively({
   const authTypes = getAuthTypesForProvider(selectedProvider);
   let selectedAuthType = authType;
 
+  // authType이 없으면 사용자에게 인증 방식 선택 UI를 보여줌
   if (!selectedAuthType) {
     if (authTypes.length === 1) {
       selectedAuthType = authTypes[0];
@@ -144,11 +174,33 @@ export async function setupModelInteractively({
       selectedAuthType = await selectAuthType(authTypes);
     }
   }
+  // authType이 유효한지 확인
   assertAuthType(selectedAuthType);
+
+  // modelVersion이 없으면 모델 목록 조회 여부 확인
+  const shouldRequestModelList = !modelVersion;
+  // modelListConfig
+  // config에 provider와 authType을 추가하여 모델 목록 조회를 위한 설정 객체 생성
+  const modelListConfig = {
+    ...config,
+    provider: selectedProvider,
+    authType: selectedAuthType,
+  };
+
+  // 외부 모델 목록 조회 확인
+  // 사용자가 모델 목록 조회를 거부하면 에러 발생
+  if (
+    shouldRequestModelList &&
+    !(await confirmExternalModelListRequest(modelListConfig))
+  ) {
+    throw new Error("External provider model list request was canceled.");
+  }
 
   // 3. API Key 입력 (필요 시)
   if (selectedAuthType === "api") {
+    // 기존 API Key 확인
     const existingKey = getApiKey(selectedProvider);
+    // API Key가 없으면 새로 입력받고 저장
     if (!existingKey) {
       const apiKey = await promptApiKey(selectedProvider);
       saveApiKey(selectedProvider, apiKey);
@@ -159,12 +211,8 @@ export async function setupModelInteractively({
   let selectedModelVersion = modelVersion;
   if (!selectedModelVersion) {
     // 임시 config 생성 (모델 조회를 위함)
-    const tempConfig = {
-      ...config,
-      provider: selectedProvider,
-      authType: selectedAuthType,
-    };
-    const models = await listProviderModels(tempConfig);
+    const models = await listProviderModels(modelListConfig);
+    //model의 목록이 있으면 modelVersion을 선택 UI를 통해 선택하고, 없으면 기본값을 사용
     if (models.length > 0) {
       selectedModelVersion = await selectModelVersion(models);
     } else {
@@ -174,6 +222,7 @@ export async function setupModelInteractively({
   }
 
   // 5. 최종 설정 병합 및 저장
+  // config에 provider와 authType을 추가하여 모델 목록 조회를 위한 설정 객체 생성
   const nextConfig = {
     ...config,
     provider: selectedProvider,
@@ -183,11 +232,14 @@ export async function setupModelInteractively({
   };
 
   // localLLM 전용 기본값 처리
+  // localLLM이면 baseURL과 port를 설정
   if (selectedProvider === "localLLM") {
     Object.assign(nextConfig, buildLocalLLMConfig(nextConfig));
   }
 
+  // config에 provider와 authType을 추가하여 모델 목록 조회를 위한 설정 객체 생성
   saveConfig(nextConfig);
+  // 모델 설정 완료 메시지
   success(`${selectedProvider} 모델 설정이 저장되었습니다.`);
 
   return nextConfig;
