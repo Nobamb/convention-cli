@@ -1,9 +1,17 @@
-import { DEFAULT_LOCAL_LLM_BASE_URL } from "../config/defaults.js";
+import {
+  DEFAULT_LOCAL_LLM_BASE_URL,
+  PROVIDERS,
+} from "../config/defaults.js";
 import { loadConfig, saveConfig } from "../config/store.js";
+import { getApiKey, promptApiKey, saveApiKey } from "../auth/apiKey.js";
 import { listProviderModels } from "../providers/index.js";
 import { normalizeLocalLLMConfig } from "../providers/localLLM.js";
 import { success } from "../utils/logger.js";
-import { selectModelVersion } from "../utils/ui.js";
+import {
+  selectAuthType,
+  selectModelVersion,
+  selectProvider,
+} from "../utils/ui.js";
 import {
   isValidAuthType,
   isValidModelVersion,
@@ -96,68 +104,102 @@ export async function setupLocalLLMModelSelection({
 }
 
 /**
+ * 특정 Provider에 대해 허용된 authType 목록을 반환합니다.
+ * @param {string} provider
+ * @returns {string[]}
+ */
+function getAuthTypesForProvider(provider) {
+  if (provider === "localLLM") {
+    return ["none"];
+  }
+  return ["api", "oauth"];
+}
+
+/**
+ * 대화형 설정을 통해 모델 구성을 진행합니다.
+ * @param {object} params
+ * @param {string} params.provider
+ * @param {string} params.authType
+ * @param {string} params.modelVersion
+ */
+export async function setupModelInteractively({
+  provider,
+  authType,
+  modelVersion,
+} = {}) {
+  const config = loadConfig();
+
+  // 1. Provider 선택 (없을 경우)
+  const selectedProvider = provider ?? (await selectProvider(PROVIDERS));
+  assertProvider(selectedProvider);
+
+  // 2. 인증 방식 선택 (없을 경우)
+  const authTypes = getAuthTypesForProvider(selectedProvider);
+  let selectedAuthType = authType;
+
+  if (!selectedAuthType) {
+    if (authTypes.length === 1) {
+      selectedAuthType = authTypes[0];
+    } else {
+      selectedAuthType = await selectAuthType(authTypes);
+    }
+  }
+  assertAuthType(selectedAuthType);
+
+  // 3. API Key 입력 (필요 시)
+  if (selectedAuthType === "api") {
+    const existingKey = getApiKey(selectedProvider);
+    if (!existingKey) {
+      const apiKey = await promptApiKey(selectedProvider);
+      saveApiKey(selectedProvider, apiKey);
+    }
+  }
+
+  // 4. 모델 버전 선택 (없을 경우)
+  let selectedModelVersion = modelVersion;
+  if (!selectedModelVersion) {
+    // 임시 config 생성 (모델 조회를 위함)
+    const tempConfig = {
+      ...config,
+      provider: selectedProvider,
+      authType: selectedAuthType,
+    };
+    const models = await listProviderModels(tempConfig);
+    if (models.length > 0) {
+      selectedModelVersion = await selectModelVersion(models);
+    } else {
+      // 모델 목록 조회를 지원하지 않거나 가져올 수 없는 경우 기본값 처리
+      selectedModelVersion = config.modelVersion || "latest";
+    }
+  }
+
+  // 5. 최종 설정 병합 및 저장
+  const nextConfig = {
+    ...config,
+    provider: selectedProvider,
+    authType: selectedAuthType,
+    modelVersion: selectedModelVersion,
+    modelDisplayName: selectedModelVersion,
+  };
+
+  // localLLM 전용 기본값 처리
+  if (selectedProvider === "localLLM") {
+    Object.assign(nextConfig, buildLocalLLMConfig(nextConfig));
+  }
+
+  saveConfig(nextConfig);
+  success(`${selectedProvider} 모델 설정이 저장되었습니다.`);
+
+  return nextConfig;
+}
+
+/**
  * --model 커맨드의 메인 엔드포인트입니다.
- *
  * @param {*} provider
  * @param {*} authType
  * @param {*} modelVersion
  */
 export async function runModelSetup(provider, authType, modelVersion) {
-  // provider를 지정하지 않으면 에러를 발생시킵니다.
-  if (!provider) {
-    throw new Error(
-      "provider를 지정해 주세요. E~H 단계에서는 localLLM을 지원합니다.",
-    );
-  }
-  // provider가 유효한지 확인
-  assertProvider(provider);
-
-  // 현재 localLLM 구현에 집중하기 위해 다른 provider는 제한합니다.
-  if (provider !== "localLLM") {
-    throw new Error(
-      `아직 이 단계에서 설정할 수 없는 provider입니다: ${provider}`,
-    );
-  }
-  // authType을 지정하면 유효한지 확인
-  if (authType !== undefined) {
-    assertAuthType(authType);
-  }
-
-  // localLLM은 인증 정보(API Key)를 서버 외부로 보내지 않는 'none' 방식만 허용
-  if (authType !== undefined && authType !== "none") {
-    throw new Error("localLLM provider는 authType none만 지원합니다.");
-  }
-  // config 파일의 기본 설정값을 가져옴
-  const config = loadConfig();
-
-  /**
-   * 사용자가 `convention --model localLLM none llama3`와 같이 모델명까지 입력한 경우.
-   * 별도의 네트워크 조회나 UI 없이 즉시 설정을 저장.
-   */
-  if (modelVersion !== undefined) {
-    // modelVersion이 유효한지 확인
-    if (!isValidModelVersion(modelVersion)) {
-      throw new Error("modelVersion은 비어 있지 않은 문자열이어야 합니다.");
-    }
-    // 모델 선택 결과를 바탕으로 설정 파일을 저장
-    const nextConfig = buildLocalLLMConfig(config, {
-      authType: authType ?? "none",
-      modelVersion,
-    });
-
-    // 설정 파일을 저장
-    saveConfig(nextConfig);
-    // 성공 메시지를 출력
-    success("localLLM 모델 설정이 저장되었습니다.");
-    // 정규화된 설정을 반환
-    return nextConfig;
-  }
-
-  /**
-   * 모델명이 생략된 경우(예: `convention --model localLLM`) 서버에서 모델 목록을 받아 선택하게 합니다.
-   */
-  return setupLocalLLMModelSelection({
-    config,
-    authType: authType ?? "none",
-  });
+  // 모든 인자가 생략되었거나 하나라도 interactive가 필요한 경우 setupModelInteractively 호출
+  return setupModelInteractively({ provider, authType, modelVersion });
 }
