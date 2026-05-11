@@ -9,6 +9,7 @@ import {
 } from "../src/commands/commit.js";
 import { runQuestionSetup, setLanguage, setMode } from "../src/commands/config.js";
 import { runModelSetup } from "../src/commands/model.js";
+import { error as logError } from "../src/utils/logger.js";
 
 /**
  * convention CLI의 단일 진입점입니다.
@@ -123,7 +124,7 @@ async function main() {
  */
 main().catch((error) => {
   // 에러를 잡아 사용자에게 안내
-  console.error(error instanceof Error ? error.message : String(error));
+  logError(error instanceof Error ? error.message : String(error));
   // 프로세스 종료 코드 1을 설정
   process.exitCode = 1;
 });
