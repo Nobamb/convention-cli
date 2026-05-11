@@ -3,11 +3,14 @@ import ora from "ora";
 import prompts from "prompts";
 
 /**
- * 텍스트를 받아서 로딩 스피너를 생성합니다.
- * @param {string} text
- * @returns
+ * 로딩 표시 spinner 생성
+ * @param {string} text 로딩 표시할 텍스트
+ * @returns {ora.Ora}
  */
 export function createSpinner(text) {
+  // ora 객체 반환
+  // text: 로딩 표시할 텍스트
+  // color: 로딩 표시할 색상
   return ora({
     text,
     color: "cyan",
@@ -15,17 +18,19 @@ export function createSpinner(text) {
 }
 
 /**
- * 커밋 메시지를 확인하는 함수입니다.
- * @param {string} message - 커밋 메시지
- * @param {string} file - 파일 이름
- * @returns {Promise<boolean>} 커밋 여부
+ * 커밋 메시지 생성 후 커밋 여부 확인
+ * @param {string} message 커밋 메시지
+ * @param {object} options 옵션
+ * @param {string} options.file 파일명
+ * @returns {Promise<boolean>}
  */
 export async function confirmCommit(message, { file } = {}) {
+  // 커밋 메시지 생성 후 커밋 여부 확인
   const displayMessage = file
     ? `\n${chalk.bold.cyan(`[${file}]`)} 커밋 메시지:\n${chalk.green(message)}\n\n이 메시지로 커밋할까요?`
     : `\n커밋 메시지:\n${chalk.green(message)}\n\n이 메시지로 커밋할까요?`;
 
-  // prompts를 사용해서 커밋 메시지를 확인합니다.
+  // 커밋 메시지 생성 후 커밋 여부 확인
   const response = await prompts({
     type: "confirm",
     name: "confirmed",
@@ -33,70 +38,73 @@ export async function confirmCommit(message, { file } = {}) {
     initial: true,
   });
 
+  // true 반환
   return response.confirmed === true;
 }
 
 /**
- * 배열 형태의 값을 `prompts` 라이브러리의 select 타입에서 사용할 수 있는 choices 형식으로 변환합니다.
- * UI 구현체(prompts)의 데이터 구조를 이 유틸 함수에 격리하여 command 계층의 복잡도를 낮춥니다.
- * @param {string[]} values - 선택할 값들의 배열
- * @returns {object[]} choices 배열
+ * select choices 변환
+ * @param {string[]} values
+ * @returns {{title: string, value: string}[]}
  */
 export function toSelectChoices(values) {
+  // values를 select choices로 변환
   return values.map((value) => ({
+    // title: 선택할 때 표시할 텍스트
+    // value: 선택한 값
     title: value,
     value,
   }));
 }
 
 /**
- * 커밋 전 확인 질문을 설정합니다.
- * @param {boolean} currentValue - 기존 설정 값
- * @returns {Promise<boolean>} - 변경된 설정 값
+ * 커밋 메시지 생성 후 커밋 여부를 물어볼지 선택
+ *
+ * @param {boolean} currentValue 기본값
+ * @returns {Promise<boolean>}
  */
 export async function selectConfirmBeforeCommit(currentValue = true) {
+  // 커밋 메시지 생성 후 커밋 여부를 물어볼지 선택
   const response = await prompts({
     type: "select",
     name: "confirmBeforeCommit",
     message: "커밋 메시지 생성 후 커밋 여부를 물어볼까요?",
     choices: [
       { title: "true - 커밋 전에 물어보기", value: true },
-      { title: "false - 물어보지 않고 바로 커밋", value: false },
+      { title: "false - 묻지 않고 바로 커밋", value: false },
     ],
-    // 기본값을 설정합니다.
     initial: currentValue === false ? 1 : 0,
   });
 
-  // 사용자가 ESC 등을 눌러 선택을 취소한 경우 처리
+  // boolean 타입이 아니면 에러 발생
   if (typeof response.confirmBeforeCommit !== "boolean") {
     throw new Error("커밋 확인 설정이 취소되었습니다.");
   }
 
-  // 커밋 확인 설정 값 반환
+  // boolean 반환
   return response.confirmBeforeCommit;
 }
 
 /**
- * 특정 Provider(주로 localLLM)에서 조회한 모델 목록을 사용자에게 보여주고 하나를 선택하게 합니다.
- *
- * [상세 설명]
- * - 방향키로 선택할 수 있는 select UI를 제공합니다.
- * - 선택 결과가 없거나 취소된 경우 명확한 에러를 던져 상위 flow를 중단시킵니다.
+ * 사용할 모델 선택
+ * @param {string[]} models 모델 목록
+ * @returns {Promise<string>} 선택한 모델
  */
 export async function selectModelVersion(models) {
+  // 모델 목록이 없으면 에러 발생
   if (!Array.isArray(models) || models.length === 0) {
     throw new Error("선택할 수 있는 모델 목록이 없습니다.");
   }
 
-  // prompts를 사용해서 모델 버전을 선택합니다.
+  // 사용할 모델 선택
   const response = await prompts({
     type: "select",
     name: "modelVersion",
-    message: "사용할 로컬 모델을 선택하세요",
+    message: "사용할 모델을 선택하세요.",
     choices: toSelectChoices(models),
   });
 
-  // 사용자가 ESC 등을 눌러 선택을 취소한 경우 처리
+  // 모델 선택이 취소되면 에러 발생
   if (
     typeof response.modelVersion !== "string" ||
     response.modelVersion.trim().length === 0
@@ -104,6 +112,72 @@ export async function selectModelVersion(models) {
     throw new Error("모델 선택이 취소되었습니다.");
   }
 
-  // 모델 버전 반환
+  // string 반환
   return response.modelVersion;
+}
+
+/**
+ * secret value 입력받기
+ * @param {string} message
+ * @returns {Promise<string>}
+ */
+export async function promptSecret(message) {
+  // secret value 입력받기
+  const response = await prompts({
+    type: "password",
+    name: "secret",
+    message,
+  });
+
+  // secret value가 string 타입이 아니거나
+  // 빈 문자열이면 에러 발생
+  if (
+    typeof response.secret !== "string" ||
+    response.secret.trim().length === 0
+  ) {
+    throw new Error("secret value must be a non-empty string");
+  }
+
+  // trim 처리 후 반환
+  return response.secret.trim();
+}
+
+/**
+ * 사용할 AI Provider 선택
+ * @param {string[]} providers
+ * @returns {Promise<string>}
+ */
+export async function selectProvider(providers) {
+  const response = await prompts({
+    type: "select",
+    name: "provider",
+    message: "사용할 AI 에이전트를 선택하세요.",
+    choices: toSelectChoices(providers),
+  });
+
+  if (typeof response.provider !== "string") {
+    throw new Error("Provider 선택이 취소되었습니다.");
+  }
+
+  return response.provider;
+}
+
+/**
+ * 인증 방식 선택
+ * @param {string[]} authTypes
+ * @returns {Promise<string>}
+ */
+export async function selectAuthType(authTypes) {
+  const response = await prompts({
+    type: "select",
+    name: "authType",
+    message: "인증 방식을 선택하세요.",
+    choices: toSelectChoices(authTypes),
+  });
+
+  if (typeof response.authType !== "string") {
+    throw new Error("인증 방식 선택이 취소되었습니다.");
+  }
+
+  return response.authType;
 }
