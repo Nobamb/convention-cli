@@ -1,7 +1,7 @@
 import { getApiKey } from "../auth/apiKey.js";
 
 // 기본 gemini 모델 버전
-const DEFAULT_GEMINI_MODEL = "gemini-3.0-flash";
+const DEFAULT_GEMINI_MODEL = "gemini-3-flash-preview";
 // 기본 타임아웃 시간
 const DEFAULT_TIMEOUT_MS = 60000;
 // gemini api base url
