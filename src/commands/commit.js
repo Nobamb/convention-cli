@@ -1,17 +1,28 @@
-import { DEFAULT_CONFIG } from '../config/defaults.js';
-import { loadConfig } from '../config/store.js';
-import { cleanAIResponse, generateCommitMessage } from '../core/ai.js';
+import {
+  DEFAULT_CONFIG,
+  DEFAULT_LOCAL_LLM_BASE_URL,
+} from "../config/defaults.js";
+import { loadConfig } from "../config/store.js";
+import { cleanAIResponse, generateCommitMessage } from "../core/ai.js";
 import {
   addFile,
   commit,
   getChangedFiles,
   getFileDiffs,
   isGitRepository,
-} from '../core/git.js';
-import { buildCommitPrompt } from '../core/prompt.js';
-import { error, info, success, warn } from '../utils/logger.js';
-import { confirmCommit } from '../utils/ui.js';
-import { isValidMode } from '../utils/validator.js';
+} from "../core/git.js";
+import { buildCommitPrompt } from "../core/prompt.js";
+import { maskSensitiveDiff } from "../core/security.js";
+import { error, info, success, warn } from "../utils/logger.js";
+import { confirmCommit, confirmExternalAITransmission } from "../utils/ui.js";
+import { isValidMode } from "../utils/validator.js";
+
+const LOCAL_LLM_LOCAL_HOSTNAMES = new Set([
+  "localhost",
+  "127.0.0.1",
+  "::1",
+  "[::1]",
+]);
 
 /**
  * 실제 커밋 작업에 사용할 설정을 읽고 기본값을 보정합니다.
@@ -44,6 +55,91 @@ async function shouldCommit(message, config, options = {}) {
 }
 
 /**
+ * 로컬 LLM이 로컬 호스트를 가리키는지 확인합니다.
+ *
+ * @param {*} baseURL
+ * @returns
+ */
+function isLocalLLMBaseURLLocal(baseURL) {
+  // URL 객체를 사용하여 host 추출
+  // 기본값: DEFAULT_LOCAL_LLM_BASE_URL
+  // baseURL이 존재하지 않거나 유효하지 않으면 false 반환
+  try {
+    const parsedURL = new URL(baseURL || DEFAULT_LOCAL_LLM_BASE_URL);
+    return LOCAL_LLM_LOCAL_HOSTNAMES.has(parsedURL.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 외부 AI Provider 인지 확인합니다.
+ * @param {*} config
+ * @returns
+ */
+function isExternalAIProvider(config = {}) {
+  // gemini 또는 openaiCompatible이면 외부 AI Provider
+  if (config.provider === "gemini" || config.provider === "openaiCompatible") {
+    return true;
+  }
+
+  // localLLM이고 local hostname이면 로컬 AI Provider
+  if (config.provider === "localLLM") {
+    return !isLocalLLMBaseURLLocal(config.baseURL);
+  }
+
+  // 그 외의 경우는 false
+  return false;
+}
+
+/**
+ * 외부 AI Provider를 사용해야 하는지 확인합니다.
+ *
+ * @param {*} config
+ * @param {*} options
+ * @returns
+ */
+async function shouldSendDiffToAI(config, options = {}) {
+  // 외부 AI Provider가 아니면 사용자 확인 없이 true 반환
+  if (!isExternalAIProvider(config)) {
+    return true;
+  }
+
+  // 외부 AI Provider이면 사용자 확인
+  return confirmExternalAITransmission({
+    provider: config.provider,
+    baseURL: config.baseURL,
+    ...options,
+  });
+}
+
+/**
+ * 민감 정보를 마스킹한 diff를 반환합니다.
+ * @param {*} diff
+ * @param {*} config
+ * @returns
+ */
+function prepareDiffForAI(diff, config) {
+  // 외부 AI Provider가 아니면 diff 반환
+  if (!isExternalAIProvider(config)) {
+    return diff;
+  }
+
+  // 민감 정보 마스킹
+  const result = maskSensitiveDiff(diff);
+
+  // 민감 정보가 발견되면 경고 로그 출력
+  if (result.found) {
+    warn(
+      "Sensitive-looking values were found in the Git diff and masked before external AI transmission.",
+    );
+  }
+
+  // 마스킹된 diff 반환
+  return result.diff;
+}
+
+/**
  * diff가 존재하는 파일 목록만 기준으로 하나의 batch commit message를 생성합니다.
  *
  * `getChangedFiles()`에는 untracked-only 파일이나 민감 파일이 포함될 수 있습니다. 반면 `getFileDiffs()`는
@@ -51,12 +147,15 @@ async function shouldCommit(message, config, options = {}) {
  * AI prompt와 staging 대상은 반드시 `fileDiffs` 결과를 기준으로 삼아야 합니다.
  */
 function collectCommittableFileDiffs() {
+  // 변경된 파일 목록 수집
   const changedFiles = getChangedFiles();
 
+  // 변경된 파일이 없으면 종료
   if (changedFiles.length === 0) {
     return { changedFiles, fileDiffs: [] };
   }
 
+  // 변경된 파일 목록에서 diff 추출
   return {
     changedFiles,
     fileDiffs: getFileDiffs(changedFiles),
@@ -71,7 +170,7 @@ function collectCommittableFileDiffs() {
  * 들어간 파일과 커밋에 올라가는 파일이 달라지는 보안 사고를 줄일 수 있습니다.
  */
 function joinDiffs(fileDiffs) {
-  return fileDiffs.map(({ diff }) => diff).join('');
+  return fileDiffs.map(({ diff }) => diff).join("");
 }
 
 /**
@@ -81,13 +180,20 @@ function joinDiffs(fileDiffs) {
  * 세 단계를 순서대로 연결하되, diff 원문이나 AI raw response를 로그로 출력하지 않습니다.
  */
 async function createCommitMessage({ diff, language, mode, config }) {
-  const prompt = buildCommitPrompt({ diff, language, mode });
+  // 민감 정보 마스킹
+  const safeDiff = prepareDiffForAI(diff, config);
+
+  // prompt 생성
+  const prompt = buildCommitPrompt({ diff: safeDiff, language, mode });
+
+  // AI 모델을 통해 commit message 생성
   const rawMessage = await generateCommitMessage(prompt, config);
+
+  // AI 모델의 응답 정리
   return cleanAIResponse(rawMessage);
 }
 
 /**
- * Phase X: 옵션 없이 `convention`을 실행했을 때 저장된 기본 mode에 따라 step 또는 batch 흐름으로 라우팅합니다.
  *
  * 유효하지 않은 mode는 batch로 오해하지 않고 기본값인 step으로 되돌립니다. 이 함수는 라우팅만 담당하며
  * Git diff 추출, 사용자 confirm, staging, commit은 각각 `runStepCommit()` 또는 `runBatchCommit()`에 위임합니다.
@@ -96,122 +202,175 @@ export async function runDefaultCommit() {
   const config = loadRuntimeConfig();
   const mode = isValidMode(config.mode) ? config.mode : DEFAULT_CONFIG.mode;
 
-  if (mode === 'batch') {
+  // batch 모드이면 batch commit 실행
+  if (mode === "batch") {
     return runBatchCommit();
   }
 
+  // step 모드이면 step commit 실행
   return runStepCommit();
 }
 
 /**
- * Phase W: 변경 파일을 하나씩 처리하는 step commit flow입니다.
- *
  * 각 파일은 자신의 diff만 prompt에 포함하고, 사용자가 승인한 경우에만 해당 파일을 staging한 뒤 commit합니다.
  * 한 파일의 confirm을 거부하는 것은 오류가 아니므로 다음 파일로 넘어갑니다. 반면 AI 생성, staging, commit
  * 자체가 실패하면 Git 상태를 애매하게 만들 수 있으므로 예외를 상위로 전달해 즉시 중단합니다.
  */
 export async function runStepCommit() {
+  // Git 저장소인지 확인
   if (!isGitRepository()) {
-    error('Git 저장소 안에서 실행해야 합니다.');
+    error("Git 저장소 안에서 실행해야 합니다.");
     return;
   }
 
+  // 설정 파일 읽기
   const config = loadRuntimeConfig();
+
+  // 변경된 파일 목록과 diff 추출
   const { changedFiles, fileDiffs } = collectCommittableFileDiffs();
 
+  // 변경된 파일이 없으면 종료
   if (changedFiles.length === 0) {
-    info('커밋할 변경사항이 없습니다.');
+    info("커밋할 변경사항이 없습니다.");
     return;
   }
 
+  // 커밋 가능한 diff가 없으면 종료
   if (fileDiffs.length === 0) {
-    warn('커밋 가능한 diff가 없습니다. 민감 파일 또는 diff가 없는 파일은 제외됩니다.');
+    warn(
+      "커밋 가능한 diff가 없습니다. 민감 파일 또는 diff가 없는 파일은 제외됩니다.",
+    );
     return;
   }
 
+  // 커밋 횟수 초기화
   let committedCount = 0;
 
+  // 변경된 파일 목록 순회
   for (const { file, diff } of fileDiffs) {
+    // 외부 AI Provider 인지 확인
+    const transmissionApproved = await shouldSendDiffToAI(config, { file });
+
+    // 외부 AI 전송이 승인되지 않으면 종료
+    if (!transmissionApproved) {
+      warn(
+        "External AI transmission was canceled. No AI request, staging, or commit was performed.",
+      );
+      return;
+    }
+
+    // AI 모델을 통해 commit message 생성
     const message = await createCommitMessage({
       diff,
       language: config.language,
-      mode: 'step',
+      mode: "step",
       config,
     });
 
+    // 파일 및 커밋 메시지 정보 출력
     info(`파일: ${file}`);
     info(`커밋 메시지: ${message}`);
 
+    // 커밋 승인 확인
     const approved = await shouldCommit(message, config, { file });
 
+    // 커밋이 승인되지 않으면 다음 파일로 넘어감
     if (!approved) {
       warn(`${file} 커밋을 건너뜁니다.`);
       continue;
     }
 
+    // 파일 add
     addFile(file);
+    // 커밋
     commit(message, [file]);
+    // 커밋 횟수 증가
     committedCount += 1;
+    // 커밋 완료
     success(`${file} 커밋이 완료되었습니다.`);
   }
 
+  // 커밋 횟수 확인
+  // 승인한 커밋이 없으면 안내 메시지 출력
   if (committedCount === 0) {
-    info('사용자가 승인한 커밋이 없습니다.');
+    info("사용자가 승인한 커밋이 없습니다.");
   }
 }
 
 /**
- * Phase V: 전체 변경사항을 하나의 메시지로 묶는 batch commit flow입니다.
- *
  * 보안상 prompt에 포함된 diff와 실제 staging 대상이 일치해야 합니다. 그래서 `git add -A`로 모든 변경을
  * 무조건 올리지 않고, 민감 파일 제외를 통과한 `fileDiffs` 목록만 `addFile(file)`로 staging합니다. 결과적으로
  * batch mode는 "하나의 commit message"를 만들지만, 커밋 대상은 검증된 파일로 제한됩니다.
  */
 export async function runBatchCommit() {
+  // Git 저장소인지 확인
   if (!isGitRepository()) {
-    error('Git 저장소 안에서 실행해야 합니다.');
+    error("Git 저장소 안에서 실행해야 합니다.");
     return;
   }
 
+  // 설정 파일 읽기
   const config = loadRuntimeConfig();
+  // 변경된 파일 목록과 diff 추출
   const { changedFiles, fileDiffs } = collectCommittableFileDiffs();
 
+  // 변경된 파일이 없으면 종료
   if (changedFiles.length === 0) {
-    info('커밋할 변경사항이 없습니다.');
+    info("커밋할 변경사항이 없습니다.");
     return;
   }
 
+  // 커밋 가능한 diff가 없으면 종료
   if (fileDiffs.length === 0) {
-    warn('커밋 가능한 diff가 없습니다. 민감 파일 또는 diff가 없는 파일은 제외됩니다.');
+    warn(
+      "커밋 가능한 diff가 없습니다. 민감 파일 또는 diff가 없는 파일은 제외됩니다.",
+    );
     return;
   }
 
+  //
   if (fileDiffs.length < changedFiles.length) {
-    warn('일부 파일은 민감 파일이거나 diff가 없어 batch 커밋 대상에서 제외됩니다.');
+    warn(
+      "일부 파일은 민감 파일이거나 diff가 없어 batch 커밋 대상에서 제외됩니다.",
+    );
   }
 
+  // 외부 AI 전송 승인 확인
+  const transmissionApproved = await shouldSendDiffToAI(config);
+  // 외부 AI 전송이 승인되지 않으면 종료
+  if (!transmissionApproved) {
+    warn(
+      "External AI transmission was canceled. No AI request, staging, or commit was performed.",
+    );
+    return;
+  }
+
+  // message 생성
   const message = await createCommitMessage({
     diff: joinDiffs(fileDiffs),
     language: config.language,
-    mode: 'batch',
+    mode: "batch",
     config,
   });
 
   info(`커밋 메시지: ${message}`);
 
+  // 커밋 승인 확인
   const approved = await shouldCommit(message, config);
-
+  // 커밋이 승인되지 않으면 종료
   if (!approved) {
-    warn('사용자가 batch 커밋을 취소했습니다.');
+    warn("사용자가 batch 커밋을 취소했습니다.");
     return;
   }
 
+  // 커밋할 파일 목록
   const filesToCommit = fileDiffs.map(({ file }) => file);
-
+  // 파일 add
   for (const file of filesToCommit) {
     addFile(file);
   }
-
+  // 커밋
   commit(message, filesToCommit);
-  success('Batch 커밋이 완료되었습니다.');
+  // 성공
+  success("Batch 커밋이 완료되었습니다.");
 }
