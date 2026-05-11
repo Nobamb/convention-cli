@@ -42,3 +42,6 @@ logs/
 # Windows 폴더 미리보기 이미지 캐시 파일
 ehthumbs.db
 Thumbs.db
+
+# 보안 위험 가능성 정리 파일
+dangerous/
