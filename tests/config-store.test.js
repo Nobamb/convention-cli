@@ -119,3 +119,93 @@ test('loadConfig keeps DEFAULT_CONFIG fields after saving partial config', async
     cleanup();
   }
 });
+
+test('saveCredentials writes only credentials.json and applies POSIX owner-only permissions when possible', async () => {
+  const { store, cleanup } = await importStoreWithTempHome();
+
+  try {
+    store.saveCredentials({
+      gemini: {
+        apiKey: 'secret-gemini-key',
+      },
+    });
+
+    assert.equal(fs.existsSync(store.CREDENTIALS_FILE_PATH), true);
+    assert.equal(fs.existsSync(store.CONFIG_FILE_PATH), false);
+
+    const rawCredentials = fs.readFileSync(store.CREDENTIALS_FILE_PATH, 'utf8');
+    assert.match(rawCredentials, /secret-gemini-key/);
+
+    if (process.platform !== 'win32') {
+      const mode = fs.statSync(store.CREDENTIALS_FILE_PATH).mode & 0o777;
+      assert.equal(mode, 0o600);
+    }
+  } finally {
+    cleanup();
+  }
+});
+
+test('hardenCredentialsFilePermissions attempts chmod 0600 without logging credentials', async () => {
+  const { store, cleanup } = await importStoreWithTempHome();
+  const chmodCalls = [];
+  const execCalls = [];
+
+  try {
+    store.hardenCredentialsFilePermissions('credentials.json', {
+      platform: 'linux',
+      chmodSync(filePath, mode) {
+        chmodCalls.push([filePath, mode]);
+      },
+      execFileSync(command, args) {
+        execCalls.push([command, args]);
+      },
+    });
+
+    assert.deepEqual(chmodCalls, [['credentials.json', 0o600]]);
+    assert.deepEqual(execCalls, []);
+  } finally {
+    cleanup();
+  }
+});
+
+test('hardenCredentialsFilePermissions uses icacls best-effort on Windows', async () => {
+  const { store, cleanup } = await importStoreWithTempHome();
+  const execCalls = [];
+
+  try {
+    store.hardenCredentialsFilePermissions('credentials.json', {
+      platform: 'win32',
+      env: {
+        USERDOMAIN: 'WORKSTATION',
+        USERNAME: 'alice',
+      },
+      chmodSync() {
+        throw new Error('chmod unsupported');
+      },
+      execFileSync(command, args, options) {
+        if (command === 'whoami') {
+          return 'WORKSTATION\\alice\n';
+        }
+
+        execCalls.push([command, args, options]);
+      },
+    });
+
+    assert.deepEqual(
+      execCalls.map(([command, args]) => [command, args]),
+      [
+        ['icacls', ['credentials.json', '/inheritance:r']],
+        ['icacls', ['credentials.json', '/grant:r', 'WORKSTATION\\alice:F']],
+        ['icacls', ['credentials.json', '/remove:g', 'Users']],
+        ['icacls', ['credentials.json', '/remove:g', 'Authenticated Users']],
+        ['icacls', ['credentials.json', '/remove:g', 'Everyone']],
+      ],
+    );
+
+    for (const [, , options] of execCalls) {
+      assert.deepEqual(options, { stdio: 'ignore' });
+    }
+  } finally {
+    cleanup();
+  }
+});
