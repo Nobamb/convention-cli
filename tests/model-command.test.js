@@ -2,10 +2,18 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+import test, { afterEach } from 'node:test';
+import prompts from 'prompts';
 
 import { DEFAULT_CONFIG, DEFAULT_LOCAL_LLM_BASE_URL } from '../src/config/defaults.js';
 import { toSelectChoices } from '../src/utils/ui.js';
+
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  prompts.inject([]);
+  globalThis.fetch = originalFetch;
+});
 
 async function importModelCommandWithTempHome() {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'convention-cli-model-home-'));
@@ -77,6 +85,35 @@ test('H-2 runModelSetup stores selected localLLM modelVersion without API key', 
       modelVersion: 'qwen2.5:7b',
       modelDisplayName: 'qwen2.5:7b',
     });
+  } finally {
+    cleanup();
+  }
+});
+
+test('H-3 openaiCompatible model list request requires confirmation before API key or fetch', async () => {
+  const { store, modelCommand, cleanup } = await importModelCommandWithTempHome();
+  let fetchCalled = false;
+
+  try {
+    store.saveConfig({
+      ...DEFAULT_CONFIG,
+      baseURL: 'https://example.test/v1',
+    });
+
+    globalThis.fetch = async () => {
+      fetchCalled = true;
+      throw new Error('fetch should not be called');
+    };
+    prompts.inject([false]);
+
+    await assert.rejects(
+      () => modelCommand.runModelSetup('openaiCompatible', 'api'),
+      /External provider model list request was canceled/,
+    );
+
+    assert.equal(fetchCalled, false);
+    assert.equal(store.loadCredentials().openaiCompatible, undefined);
+    assert.equal(store.loadConfig().provider, null);
   } finally {
     cleanup();
   }
