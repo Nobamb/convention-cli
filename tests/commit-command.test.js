@@ -3,15 +3,19 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import test, { after, before, beforeEach } from 'node:test';
+import test, { after, afterEach, before, beforeEach } from 'node:test';
+import prompts from 'prompts';
 
 import { DEFAULT_CONFIG } from '../src/config/defaults.js';
+import { buildExternalAITransmissionMessage } from '../src/utils/ui.js';
 
 let commands;
 let store;
 let tempHome;
 let previousHome;
 let previousUserProfile;
+const originalFetch = globalThis.fetch;
+const originalConsoleWarn = console.warn;
 
 const gitAvailable = (() => {
   try {
@@ -40,6 +44,12 @@ beforeEach(() => {
   if (store && fs.existsSync(store.CONFIG_DIR)) {
     fs.rmSync(store.CONFIG_DIR, { recursive: true, force: true });
   }
+  prompts.inject([]);
+});
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  console.warn = originalConsoleWarn;
 });
 
 after(() => {
@@ -195,5 +205,255 @@ test('runDefaultCommit falls back to step flow for invalid mode', { skip: skipWi
 
     assert.equal(messages.filter((message) => message === 'chore: update project files').length, 2);
     assert.equal(getStatus(repoDir), '');
+  });
+});
+
+test('runBatchCommit does not call Gemini or commit when external AI transmission is rejected', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    let fetchCalled = false;
+    globalThis.fetch = async () => {
+      fetchCalled = true;
+      throw new Error('Gemini should not be called after transmission rejection');
+    };
+
+    prompts.inject([false]);
+    saveRuntimeConfig({
+      mode: 'batch',
+      provider: 'gemini',
+      apiKey: 'test-key',
+      modelVersion: 'gemini-test',
+      confirmBeforeCommit: false,
+    });
+    writeFile(repoDir, 'README.md', 'gemini rejected change\n');
+
+    await commands.runBatchCommit();
+
+    assert.equal(fetchCalled, false);
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: initial commit');
+    assert.match(getStatus(repoDir), /^ M README\.md/m);
+  });
+});
+
+test('runBatchCommit does not call OpenAI-compatible provider or commit when external AI transmission is rejected', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    let fetchCalled = false;
+    globalThis.fetch = async () => {
+      fetchCalled = true;
+      throw new Error('OpenAI-compatible provider should not be called after transmission rejection');
+    };
+
+    prompts.inject([false]);
+    saveRuntimeConfig({
+      mode: 'batch',
+      provider: 'openaiCompatible',
+      apiKey: 'test-key',
+      baseURL: 'https://example.test/v1',
+      modelVersion: 'test-model',
+      confirmBeforeCommit: false,
+    });
+    writeFile(repoDir, 'README.md', 'openai-compatible rejected change\n');
+
+    await commands.runBatchCommit();
+
+    assert.equal(fetchCalled, false);
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: initial commit');
+    assert.match(getStatus(repoDir), /^ M README\.md/m);
+  });
+});
+
+test('runBatchCommit requires confirmation for OpenAI-compatible http custom endpoint and rejection prevents fetch', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    let fetchCalled = false;
+    globalThis.fetch = async () => {
+      fetchCalled = true;
+      throw new Error('OpenAI-compatible HTTP endpoint should not be called after transmission rejection');
+    };
+
+    prompts.inject([false]);
+    saveRuntimeConfig({
+      mode: 'batch',
+      provider: 'openaiCompatible',
+      apiKey: 'test-key',
+      baseURL: 'http://custom-llm.example.test/v1',
+      modelVersion: 'test-model',
+      confirmBeforeCommit: false,
+    });
+    writeFile(repoDir, 'README.md', 'openai-compatible http rejected change\n');
+
+    await commands.runBatchCommit();
+
+    assert.equal(fetchCalled, false);
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: initial commit');
+    assert.match(getStatus(repoDir), /^ M README\.md/m);
+  });
+});
+
+test('OpenAI-compatible external AI confirmation message identifies endpoint without leaking URL secrets', () => {
+  const message = buildExternalAITransmissionMessage({
+    provider: 'openaiCompatible',
+    baseURL: 'http://user:secret-token@custom-llm.example.test/v1?api_key=query-secret#token-fragment',
+  });
+
+  assert.match(message, /openaiCompatible/);
+  assert.match(message, /http:\/\/custom-llm\.example\.test\/v1/);
+  assert.match(message, /unencrypted HTTP/);
+  assert.doesNotMatch(message, /secret-token/);
+  assert.doesNotMatch(message, /query-secret/);
+  assert.doesNotMatch(message, /token-fragment/);
+  assert.doesNotMatch(message, /api_key/);
+});
+
+test('runStepCommit does not call remote localLLM or commit when external AI transmission is rejected', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    let fetchCalled = false;
+    globalThis.fetch = async () => {
+      fetchCalled = true;
+      throw new Error('Remote localLLM should not be called after transmission rejection');
+    };
+
+    prompts.inject([false]);
+    saveRuntimeConfig({
+      mode: 'step',
+      provider: 'localLLM',
+      baseURL: 'https://llm.example.test/v1',
+      modelVersion: 'test-model',
+      confirmBeforeCommit: false,
+    });
+    writeFile(repoDir, 'README.md', 'remote localllm rejected change\n');
+
+    await commands.runStepCommit();
+
+    assert.equal(fetchCalled, false);
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: initial commit');
+    assert.match(getStatus(repoDir), /^ M README\.md/m);
+  });
+});
+
+test('runBatchCommit allows localLLM localhost without external AI transmission confirmation', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    let fetchCalled = false;
+    globalThis.fetch = async (url) => {
+      fetchCalled = true;
+      assert.equal(url, 'http://localhost:11434/v1/chat/completions');
+
+      return {
+        ok: true,
+        async json() {
+          return {
+            choices: [{ message: { content: 'chore: update project files' } }],
+          };
+        },
+      };
+    };
+
+    saveRuntimeConfig({
+      mode: 'batch',
+      provider: 'localLLM',
+      baseURL: 'http://localhost:11434/v1',
+      modelVersion: 'test-model',
+      confirmBeforeCommit: false,
+    });
+    writeFile(repoDir, 'README.md', 'local localllm allowed change\n');
+
+    await commands.runBatchCommit();
+
+    assert.equal(fetchCalled, true);
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: update project files');
+    assert.equal(getStatus(repoDir), '');
+  });
+});
+
+test('runBatchCommit sends masked diff to Gemini and does not log raw secret', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    const rawSecret = 'gemini-raw-secret-value';
+    const warnings = [];
+    let promptSent = '';
+
+    console.warn = (message) => {
+      warnings.push(String(message));
+    };
+
+    globalThis.fetch = async (_url, options = {}) => {
+      const payload = JSON.parse(options.body);
+      promptSent = payload.contents[0].parts[0].text;
+
+      return {
+        ok: true,
+        async json() {
+          return {
+            candidates: [
+              {
+                content: {
+                  parts: [{ text: 'chore: update project files' }],
+                },
+              },
+            ],
+          };
+        },
+      };
+    };
+
+    prompts.inject([true]);
+    saveRuntimeConfig({
+      mode: 'batch',
+      provider: 'gemini',
+      apiKey: 'test-key',
+      modelVersion: 'gemini-test',
+      confirmBeforeCommit: false,
+    });
+    writeFile(repoDir, 'README.md', `API_KEY=${rawSecret}\n`);
+
+    await commands.runBatchCommit();
+
+    assert.equal(promptSent.includes(rawSecret), false);
+    assert.match(promptSent, /API_KEY=\[REDACTED\]/u);
+    assert.equal(warnings.some((message) => message.includes(rawSecret)), false);
+    assert.equal(warnings.some((message) => message.includes('masked before external AI transmission')), true);
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: update project files');
+  });
+});
+
+test('runBatchCommit sends masked diff to OpenAI-compatible provider and does not log raw secret', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    const rawSecret = 'postgres://user:password@example.test/db';
+    const warnings = [];
+    let promptSent = '';
+
+    console.warn = (message) => {
+      warnings.push(String(message));
+    };
+
+    globalThis.fetch = async (_url, options = {}) => {
+      const payload = JSON.parse(options.body);
+      promptSent = payload.messages[0].content;
+
+      return {
+        ok: true,
+        async json() {
+          return {
+            choices: [{ message: { content: 'chore: update project files' } }],
+          };
+        },
+      };
+    };
+
+    prompts.inject([true]);
+    saveRuntimeConfig({
+      mode: 'batch',
+      provider: 'openaiCompatible',
+      apiKey: 'test-key',
+      baseURL: 'https://example.test/v1',
+      modelVersion: 'test-model',
+      confirmBeforeCommit: false,
+    });
+    writeFile(repoDir, 'README.md', `DATABASE_URL=${rawSecret}\n`);
+
+    await commands.runBatchCommit();
+
+    assert.equal(promptSent.includes(rawSecret), false);
+    assert.match(promptSent, /DATABASE_URL=\[REDACTED\]/u);
+    assert.equal(warnings.some((message) => message.includes(rawSecret)), false);
+    assert.equal(warnings.some((message) => message.includes('masked before external AI transmission')), true);
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: update project files');
   });
 });
