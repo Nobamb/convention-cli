@@ -35,7 +35,28 @@ function getRequiredBaseURL(config = {}) {
     throw new Error("OpenAI-compatible baseURL must be a valid http(s) URL.");
   }
 
-  return trimTrailingSlash(config.baseURL);
+  // URL 파싱
+  const parsedURL = new URL(config.baseURL.trim());
+  // URL에 username, password, search, hash가 포함되어 있으면
+  if (
+    // username 추출
+    parsedURL.username ||
+    // password 추출
+    parsedURL.password ||
+    // search 추출
+    parsedURL.search ||
+    // hash 추출
+    parsedURL.hash
+  ) {
+    // error throw
+    throw new Error(
+      "OpenAI-compatible baseURL must not include credentials, query parameters, or fragments.",
+    );
+  }
+
+  // origin과 pathname을 합치고
+  // 마지막 슬래시 제거
+  return trimTrailingSlash(`${parsedURL.origin}${parsedURL.pathname}`);
 }
 
 /**
