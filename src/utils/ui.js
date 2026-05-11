@@ -43,10 +43,158 @@ export async function confirmCommit(message, { file } = {}) {
 }
 
 /**
+ * baseURL에서 안전한 endpoint 레이블 생성
+ * @param {string} baseURL
+ * @returns {string|null}
+ */
+function safeEndpointLabel(baseURL) {
+  // baseURL이 string 타입이 아니거나 빈 문자열이면 null 반환
+  if (typeof baseURL !== "string" || baseURL.trim().length === 0) {
+    return null;
+  }
+
+  try {
+    // URL 파싱
+    const parsedURL = new URL(baseURL);
+    // username, password 제거
+    parsedURL.username = "";
+    parsedURL.password = "";
+    // search 제거
+    parsedURL.search = "";
+    // hash 제거
+    parsedURL.hash = "";
+    // 결과 반환
+    return parsedURL.toString().replace(/\/$/u, "");
+  } catch {
+    // 에러 발생 시
+    return "configured custom endpoint";
+  }
+}
+
+/**
+ * http 통신인지 확인
+ * @param {string} baseURL
+ * @returns {boolean}
+ */
+function isPlainHttpEndpoint(baseURL) {
+  // baseURL을 URL 객체로 변환
+  try {
+    // http 프로토콜인지 확인
+    return new URL(baseURL).protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 외부 AI 전송 메시지 생성
+ * @param {*} param0
+ * @param {string} param0.provider
+ * @param {string} param0.file
+ * @param {string} param0.baseURL
+ * @returns {string}
+ */
+export function buildExternalAITransmissionMessage({
+  provider,
+  file,
+  baseURL,
+} = {}) {
+  // target 정의
+  const target = file ? `${chalk.bold.cyan(`[${file}]`)} diff` : "Git diff";
+  // provider 이름
+  const providerName = provider || "external AI";
+  // endpoint
+  const endpoint =
+    provider === "openaiCompatible" ? safeEndpointLabel(baseURL) : null;
+  // endpoint 텍스트
+  const endpointText = endpoint ? ` Endpoint: ${endpoint}.` : "";
+  // http 경고
+  const httpWarning =
+    provider === "openaiCompatible" && isPlainHttpEndpoint(baseURL)
+      ? " Warning: this endpoint uses unencrypted HTTP."
+      : "";
+  // 외부 AI 전송 메시지 반환
+  return `Send ${target} to external AI provider "${providerName}"?${endpointText}${httpWarning}`;
+}
+
+/**
+ * 외부 AI 전송 확인
+ *
+ * @param {object} options
+ * @param {string} options.provider
+ * @param {string} [options.file]
+ * @param {string} [options.baseURL]
+ * @returns {Promise<boolean>}
+ */
+export async function confirmExternalAITransmission(options = {}) {
+  // 외부 AI 전송 메시지 생성
+  const response = await prompts({
+    type: "confirm",
+    name: "confirmed",
+    message: buildExternalAITransmissionMessage(options),
+    initial: false,
+  });
+  // 확인된 값 반환
+  return response.confirmed === true;
+}
+
+/**
  * select choices 변환
  * @param {string[]} values
  * @returns {{title: string, value: string}[]}
  */
+export function buildExternalProviderRequestMessage({
+  provider,
+  action = "request",
+  baseURL,
+} = {}) {
+  // 외부 provider에 대한 요청 메시지
+  const providerName = provider || "external AI";
+  // endpoint
+  const endpoint =
+    provider === "openaiCompatible" ? safeEndpointLabel(baseURL) : null;
+  // endpoint 텍스트
+  const endpointText = endpoint ? ` Endpoint: ${endpoint}.` : "";
+  // http 경고
+  const httpWarning =
+    provider === "openaiCompatible" && isPlainHttpEndpoint(baseURL)
+      ? " Warning: this endpoint uses unencrypted HTTP."
+      : "";
+  // 외부 provider에 대한 요청 메시지 반환
+  return `Allow "${providerName}" to ${action}?${endpointText}${httpWarning}`;
+}
+
+/**
+ * 외부 provider 요청 확인
+ * @param {object} options
+ * @param {string} options.provider
+ * @param {string} [options.action="request"]
+ * @param {string} [options.baseURL]
+ * @returns {Promise<boolean>}
+ */
+export async function confirmExternalProviderRequest(options = {}) {
+  // 외부 provider 요청 확인
+  const response = await prompts({
+    // confirm 타입
+    type: "confirm",
+    // confirm 이름
+    name: "confirmed",
+    // 메시지
+    message: buildExternalProviderRequestMessage(options),
+    // 초기값
+    initial: false,
+  });
+
+  // confirmed값 true 반환
+  return response.confirmed === true;
+}
+
+/**
+ * select choices 변환
+ * @param {string[]} values
+ * @returns {{title: string, value: string}[]}
+ */
+
 export function toSelectChoices(values) {
   // values를 select choices로 변환
   return values.map((value) => ({
@@ -124,9 +272,11 @@ export async function selectModelVersion(models) {
 export async function promptSecret(message) {
   // secret value 입력받기
   const response = await prompts({
+    // password 타입
     type: "password",
+    // 입력값
     name: "secret",
-    message,
+    // 메시지
   });
 
   // secret value가 string 타입이 아니거나
