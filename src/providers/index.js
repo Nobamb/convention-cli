@@ -1,5 +1,7 @@
 import * as mockProvider from "./mock.js";
 import * as localLLMProvider from "./localLLM.js";
+import * as geminiProvider from "./gemini.js";
+import * as openaiCompatibleProvider from "./openai-compatible.js";
 
 /**
  * 지원하는 AI Provider 모듈들의 레지스트리입니다.
@@ -7,6 +9,8 @@ import * as localLLMProvider from "./localLLM.js";
 const PROVIDER_MODULES = {
   mock: mockProvider,
   localLLM: localLLMProvider,
+  gemini: geminiProvider,
+  openaiCompatible: openaiCompatibleProvider,
 };
 
 /**
