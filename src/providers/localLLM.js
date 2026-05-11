@@ -3,6 +3,7 @@ import { isValidBaseURL } from "../utils/validator.js";
 
 // 로컬 서버가 꺼져 있거나 응답이 늦을 경우 CLI가 무한히 대기하는 것을 방지하기 위한 Timeout(기본 5초)
 // 로컬 LLM의 생성(Inference) 작업은 시간이 오래 걸릴 수 있으므로 별도의 긴 타임아웃(기본 60초)을 설정합니다.
+const DEFAULT_TIMEOUT_MS = 5000;
 const DEFAULT_GENERATE_TIMEOUT_MS = 60000;
 
 /**
@@ -31,7 +32,7 @@ export function validateConfig(config = {}) {
   }
 
   if (!isValidBaseURL(normalizedConfig.baseURL)) {
-    throw new Error("localLLM baseURL은 유효한 http(s) URL이어야 합니다.");
+    throw new Error("localLLM baseURL must be a valid http(s) URL.");
   }
 
   return true;
