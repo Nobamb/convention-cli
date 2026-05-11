@@ -1,3 +1,4 @@
+import childProcess from "child_process";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -34,11 +35,100 @@ export function saveConfig(config) {
  * @param {*} filePath
  */
 
-function restrictUserReadWrite(filePath) {
+function getWindowsCurrentUser(execFileSync, env = process.env) {
+  // 실패하면 null을 반환한다.
+  // whoami를 사용하여 현재 사용자를 얻으려고 시도한다.
   try {
-    fs.chmodSync(filePath, 0o600);
+    // stdio option을 사용하여 표준 입출력을 제어한다.
+    // stdio: ["ignore", "pipe", "ignore"]는 표준 입력을 무시하고, 표준 출력을 파이프로 연결하고, 표준 에러를 무시한다.
+    //
+    const user = execFileSync("whoami", [], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+
+    // user가 있으면 반환한다.
+    if (user) {
+      return user;
+    }
   } catch {
-    // Some platforms/filesystems do not support POSIX-style permissions.
+    // whoami가 사용할 수 없을 때 환경 변수를 사용한다.
+  }
+
+  // USERNAME이 없으면 null을 반환한다.
+  if (!env.USERNAME) {
+    return null;
+  }
+  // USERNAME이 있으면 반환한다.
+  return env.USERDOMAIN ? `${env.USERDOMAIN}\\${env.USERNAME}` : env.USERNAME;
+}
+
+/**
+ * hardenCredentialsFilePermissions
+ * 파일의 권한을 읽기와 쓰기만 가능하도록 변경한다.
+ * POSIX 스타일 권한을 지원하지 않는 플랫폼/파일시스템에서는 아무것도 하지 않는다.
+ * Windows에서는 icacls를 사용하여 권한을 제한한다.
+ *
+ * @param {*} filePath
+ * @param {*} options
+ * @returns
+ */
+export function hardenCredentialsFilePermissions(filePath, options = {}) {
+  // fs.chmodSync 함수를 사용하여 파일의 권한을 읽기와 쓰기만 가능하도록 변경한다.
+  // fs.chmodSync 함수를 사용하여 파일의 권한을 읽기와 쓰기만 가능하도록 변경한다.
+  const chmodSync = options.chmodSync ?? fs.chmodSync;
+  // childProcess.execFileSync 함수를 사용하여 파일의 권한을 읽기와 쓰기만 가능하도록 변경한다.
+  const execFileSync = options.execFileSync ?? childProcess.execFileSync;
+  // process.platform을 사용하여 운영체제를 확인한다.
+  const platform = options.platform ?? process.platform;
+  // 환경 변수를 가져온다.
+  const env = options.env ?? process.env;
+
+  try {
+    // 파일의 권한을 읽기와 쓰기만 가능하도록 변경한다.
+    chmodSync(filePath, 0o600);
+  } catch {
+    // POSIX-style 권한을 지원하지 않는 플랫폼/파일 시스템에서는 아무것도 하지 않는다.
+  }
+
+  // Windows가 아니면 아무것도 하지 않는다.
+  if (platform !== "win32") {
+    return;
+  }
+
+  // Windows 현재 사용자를 가져온다.
+  const currentUser = getWindowsCurrentUser(execFileSync, env);
+
+  // 현재 사용자가 없으면 아무것도 하지 않는다.
+  if (!currentUser) {
+    return;
+  }
+
+  // icacls를 사용하여 파일의 권한을 읽기와 쓰기만 가능하도록 변경한다.
+  // icacls는 Windows에서 사용되는 명령어이다.
+  const runIcacls = (args) => {
+    try {
+      execFileSync("icacls", args, { stdio: "ignore" });
+    } catch {
+      // Windows ACL hardening은 최선의 노력을 다하며 자격 증명을 노출하지 않아야 한다.
+    }
+  };
+
+  // 상속을 제거한다.
+  runIcacls([filePath, "/inheritance:r"]);
+  // 현재 사용자에 대한 권한을 추가한다.
+  runIcacls([filePath, "/grant:r", `${currentUser}:F`]);
+
+  // Users, Authenticated Users, Everyone 그룹에 대한 권한을 제거한다.
+  for (const principal of ["Users", "Authenticated Users", "Everyone"]) {
+    runIcacls([filePath, "/remove:g", principal]);
+  }
+
+  // 권한 상속을 제거한다.
+  runIcacls([filePath, "/inheritance:d"]);
+  // 현재 사용자에 대한 권한을 제거한다.
+  for (const principal of ["Users", "Authenticated Users", "Everyone"]) {
+    runIcacls([filePath, "/remove:g", principal]);
   }
 }
 
@@ -139,5 +229,5 @@ export function saveCredentials(credentials) {
     "utf8",
   );
   // 자격 증명 파일의 권한을 읽기와 쓰기만 가능하도록 제한한다.
-  restrictUserReadWrite(CREDENTIALS_FILE_PATH);
+  hardenCredentialsFilePermissions(CREDENTIALS_FILE_PATH);
 }
