@@ -93,24 +93,57 @@ function isExternalAIProvider(config = {}) {
 }
 
 /**
- * 외부 AI Provider를 사용해야 하는지 확인합니다.
+ * 외부 AI Provider로 코드를 전송하기 전 사용자 승인을 확인합니다.
+ * "confirmExternalTransmission" 설정에 따라 매번 묻거나, 한 번만 묻거나, 묻지 않습니다.
  *
- * @param {*} config
- * @param {*} options
- * @returns
+ * @param {Object} config - 사용자 설정
+ * @param {Object} options - UI용 추가 정보 (file 등)
+ * @param {Object} sessionState - 현재 실행 세션 내의 승인 상태를 저장하는 객체
+ * @returns {Promise<boolean>} 전송 승인 여부
  */
-async function shouldSendDiffToAI(config, options = {}) {
-  // 외부 AI Provider가 아니면 사용자 확인 없이 true 반환
+async function shouldSendDiffToAI(config, options = {}, sessionState = {}) {
+  // 외부 AI Provider가 아니면(Mock, 로컬LLM 등) 사용자 확인 없이 true 반환
   if (!isExternalAIProvider(config)) {
     return true;
   }
 
-  // 외부 AI Provider이면 사용자 확인
-  return confirmExternalAITransmission({
+  const mode = config.confirmExternalTransmission || "always";
+  let forcePrompt = false;
+  let warningMessage = "";
+
+  // 민감 정보 강제 검사 (diff가 제공된 경우)
+  if (options.diff) {
+    const result = maskSensitiveDiff(options.diff);
+    if (result.found) {
+      forcePrompt = true;
+      warningMessage = "⚠️ 민감정보 탐지됨! 코드를 외부로 전송하기 전 반드시 확인하세요.";
+    }
+  }
+
+  // 강제 확인 조건이 아니면서 "never" 모드이면 확인 없이 승인
+  if (!forcePrompt && mode === "never") {
+    return true;
+  }
+
+  // 강제 확인 조건이 아니면서 "once" 모드이고 이미 이번 세션에서 승인받았다면 바로 승인
+  if (!forcePrompt && mode === "once" && sessionState.externalTransmissionApproved) {
+    return true;
+  }
+
+  // 그 외(always, once의 첫 시도, 또는 민감정보 탐지로 인한 강제 프롬프트)에는 사용자에게 확인
+  const approved = await confirmExternalAITransmission({
     provider: config.provider,
     baseURL: config.baseURL,
+    warning: warningMessage,
     ...options,
   });
+
+  // "once" 모드에서 승인한 경우 (정상 승인인 경우에만) 다음 파일부터는 묻지 않도록 세션 상태 기록
+  if (approved && mode === "once" && !forcePrompt) {
+    sessionState.externalTransmissionApproved = true;
+  }
+
+  return approved;
 }
 
 /**
@@ -246,10 +279,19 @@ export async function runStepCommit() {
   // 커밋 횟수 초기화
   let committedCount = 0;
 
+  // 세션 내 승인 상태 추적을 위한 객체
+  const sessionState = {
+    externalTransmissionApproved: false,
+  };
+
   // 변경된 파일 목록 순회
   for (const { file, diff } of fileDiffs) {
     // 외부 AI Provider 인지 확인
-    const transmissionApproved = await shouldSendDiffToAI(config, { file });
+    const transmissionApproved = await shouldSendDiffToAI(
+      config,
+      { file, diff },
+      sessionState,
+    );
 
     // 외부 AI 전송이 승인되지 않으면 종료
     if (!transmissionApproved) {
@@ -335,8 +377,16 @@ export async function runBatchCommit() {
     );
   }
 
-  // 외부 AI 전송 승인 확인
-  const transmissionApproved = await shouldSendDiffToAI(config);
+  // 외부 AI 전송 승인 확인 (Batch는 파일이 하나로 합쳐지므로 sessionState가 큰 의미는 없지만 일관성을 위해 유지)
+  const sessionState = {
+    externalTransmissionApproved: false,
+  };
+  const batchDiff = joinDiffs(fileDiffs);
+  const transmissionApproved = await shouldSendDiffToAI(
+    config,
+    { diff: batchDiff },
+    sessionState,
+  );
   // 외부 AI 전송이 승인되지 않으면 종료
   if (!transmissionApproved) {
     warn(
