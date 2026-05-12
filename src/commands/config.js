@@ -1,6 +1,9 @@
 import { loadConfig, saveConfig } from "../config/store.js";
-import { error, success } from "../utils/logger.js";
-import { selectConfirmBeforeCommit } from "../utils/ui.js";
+import { error, info, success } from "../utils/logger.js";
+import {
+  selectConfirmBeforeCommit,
+  selectConfirmExternalTransmission,
+} from "../utils/ui.js";
 import { isValidLanguage, isValidMode } from "../utils/validator.js";
 
 export const setMode = (mode) => {
@@ -44,52 +47,64 @@ export const setLanguage = (language) => {
 };
 
 /**
- * 커밋 전 확인 질문을 설정합니다.
+ * 커밋 전 확인 질문 및 외부 전송 확인 여부를 설정합니다.
  *
- * @param {boolean} confirmBeforeCommit 커밋 전 확인 질문 여부를 설정합니다.
- * @returns
+ * @param {Object} options 설정 옵션
+ * @param {boolean} [options.confirmBeforeCommit] 커밋 전 확인 질문 여부
+ * @param {string} [options.confirmExternalTransmission] 외부 전송 확인 여부
  */
-export const setQuestion = (confirmBeforeCommit) => {
-  // 입력값이 boolean이 아닐 경우 에러 메시지 출력 후 종료
-  if (typeof confirmBeforeCommit !== "boolean") {
-    error("confirmBeforeCommit 값은 true 또는 false여야 합니다.");
-    return;
-  }
-  // 기존 설정 파일을 불러와서
+export const setQuestion = ({
+  confirmBeforeCommit,
+  confirmExternalTransmission,
+}) => {
   const config = loadConfig();
+  const newConfig = { ...config };
 
-  // confirmBeforeCommit 필드만 새 값으로 바꾼 뒤 saveConfig 함수를 통해 config.json에 기록합니다.
-  saveConfig({
-    ...config,
-    confirmBeforeCommit,
-  });
+  if (typeof confirmBeforeCommit === "boolean") {
+    newConfig.confirmBeforeCommit = confirmBeforeCommit;
+  }
 
-  // 성공 로그 출력
-  success(
-    confirmBeforeCommit
-      ? "커밋 전 확인 질문을 사용하도록 저장되었습니다."
-      : "커밋 전 확인 질문 없이 바로 커밋하도록 저장되었습니다.",
-  );
+  if (
+    ["always", "once", "never"].includes(confirmExternalTransmission)
+  ) {
+    newConfig.confirmExternalTransmission = confirmExternalTransmission;
+  }
+
+  saveConfig(newConfig);
+
+  success("질문 관련 설정이 갱신되었습니다.");
+  if (typeof confirmBeforeCommit === "boolean") {
+    info(
+      `- 커밋 전 확인: ${confirmBeforeCommit ? "사용함" : "사용 안 함 (바로 커밋)"}`,
+    );
+  }
+  if (confirmExternalTransmission) {
+    info(`- 외부 AI 전송 확인: ${confirmExternalTransmission}`);
+  }
 };
 
 /**
- * 저장된 설정을 불러와 커밋 전 확인 질문을 설정합니다.
- * @returns
+ * 저장된 설정을 불러와 커밋 전 확인 질문 및 외부 전송 확인 설정을 대화형으로 진행합니다.
  */
 export async function runQuestionSetup() {
-  // 기존 설정 파일을 불러와서
   const config = loadConfig();
-  // 대화형 ui를 통해 커밋 전 확인 질문 여부를 설정합니다.
+
+  // 1. 커밋 전 확인 질문 여부
   const confirmBeforeCommit = await selectConfirmBeforeCommit(
     config.confirmBeforeCommit,
   );
 
-  // 설정 값을 저장
-  setQuestion(confirmBeforeCommit);
+  // 2. 외부 AI 전송 확인 여부
+  const confirmExternalTransmission = await selectConfirmExternalTransmission(
+    config.confirmExternalTransmission,
+  );
 
-  // 성공적으로 설정된 값을 반환
+  // 설정 저장
+  setQuestion({ confirmBeforeCommit, confirmExternalTransmission });
+
   return {
     ...config,
     confirmBeforeCommit,
+    confirmExternalTransmission,
   };
 }
