@@ -98,6 +98,7 @@ export function buildExternalAITransmissionMessage({
   provider,
   file,
   baseURL,
+  warning,
 } = {}) {
   // target 정의
   const target = file ? `${chalk.bold.cyan(`[${file}]`)} diff` : "Git diff";
@@ -113,8 +114,11 @@ export function buildExternalAITransmissionMessage({
     provider === "openaiCompatible" && isPlainHttpEndpoint(baseURL)
       ? " Warning: this endpoint uses unencrypted HTTP."
       : "";
+  // 추가 경고 메시지
+  const customWarning = warning ? `\n\n  ${chalk.bold.red(warning)}\n\n  ` : "";
+  
   // 외부 AI 전송 메시지 반환
-  return `Send ${target} to external AI provider "${providerName}"?${endpointText}${httpWarning}`;
+  return `${customWarning}Send ${target} to external AI provider "${providerName}"?${endpointText}${httpWarning}`;
 }
 
 /**
@@ -231,6 +235,33 @@ export async function selectConfirmBeforeCommit(currentValue = true) {
 
   // boolean 반환
   return response.confirmBeforeCommit;
+}
+/**
+ * 외부 AI 전송 시 사용자 확인 여부를 설정합니다.
+ *
+ * @param {string} currentValue 기본값
+ * @returns {Promise<string>}
+ */
+export async function selectConfirmExternalTransmission(
+  currentValue = "always",
+) {
+  const response = await prompts({
+    type: "select",
+    name: "confirmExternalTransmission",
+    message: "외부 AI Provider로 코드를 보낼 때 확인 절차를 어떻게 할까요?",
+    choices: [
+      { title: "always - 매 파일마다 물어보기 (가장 안전)", value: "always" },
+      { title: "once   - 첫 파일에서만 물어보기 (추천)", value: "once" },
+      { title: "never  - 묻지 않고 바로 전송", value: "never" },
+    ],
+    initial: ["always", "once", "never"].indexOf(currentValue) || 0,
+  });
+
+  if (typeof response.confirmExternalTransmission !== "string") {
+    throw new Error("외부 전송 확인 설정이 취소되었습니다.");
+  }
+
+  return response.confirmExternalTransmission;
 }
 
 /**
