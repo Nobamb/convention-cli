@@ -199,6 +199,10 @@ test('hardenCredentialsFilePermissions uses icacls best-effort on Windows', asyn
         ['icacls', ['credentials.json', '/remove:g', 'Users']],
         ['icacls', ['credentials.json', '/remove:g', 'Authenticated Users']],
         ['icacls', ['credentials.json', '/remove:g', 'Everyone']],
+        ['icacls', ['credentials.json', '/inheritance:d']],
+        ['icacls', ['credentials.json', '/remove:g', 'Users']],
+        ['icacls', ['credentials.json', '/remove:g', 'Authenticated Users']],
+        ['icacls', ['credentials.json', '/remove:g', 'Everyone']],
       ],
     );
 
