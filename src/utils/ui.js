@@ -277,6 +277,7 @@ export async function promptSecret(message) {
     // 입력값
     name: "secret",
     // 메시지
+    message,
   });
 
   // secret value가 string 타입이 아니거나
