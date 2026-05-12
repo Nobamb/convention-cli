@@ -17,6 +17,9 @@ export const DEFAULT_CONFIG = {
   modelDisplayName: null,
   // Git 히스토리 보호를 위해 AI 메시지를 생성해도 커밋 전 사용자 확인을 기본으로 요구합니다.
   confirmBeforeCommit: true,
+  // 외부 AI Provider로 코드를 보낼 때 사용자 확인을 받을지 여부입니다.
+  // "always": 매번 확인, "once": 첫 번째 전송 시에만 확인, "never": 확인 없이 바로 전송
+  confirmExternalTransmission: "always",
 };
 
 // CLI 설정값 검증과 command 분기에서 재사용할 수 있는 지원 커밋 모드 목록입니다.
