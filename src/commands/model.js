@@ -69,6 +69,153 @@ function assertAuthType(authType) {
 }
 
 /**
+ * 실제로 저장까지 허용하는 Provider/Auth 조합을 한 곳에서 관리합니다.
+ * validator의 authType 목록은 이후 확장(oauth 등)을 위해 넓게 유지하되, 현재 MVP 설정 흐름에서는
+ * diff 외부 전송 정책과 credentials 저장 구조가 준비된 조합만 통과시켜 잘못된 설정이 저장되지 않도록 합니다.
+ */
+const SUPPORTED_AUTH_TYPES_BY_PROVIDER = {
+  mock: ["none"],
+  localLLM: ["none"],
+  gemini: ["api"],
+  openaiCompatible: ["api", "none"],
+};
+
+/**
+ * Provider별 기본 모델명을 정의합니다.
+ * 대화형 모델 목록 조회를 지원하지 않거나 사용자가 직접 모델명을 고르지 않는 경우에도
+ * config에는 비어 있지 않은 modelVersion이 저장되어 이후 commit flow가 같은 schema를 사용할 수 있습니다.
+ */
+const DEFAULT_MODEL_VERSION_BY_PROVIDER = {
+  mock: "mock",
+  gemini: "gemini-3-flash-preview",
+  openaiCompatible: "latest",
+};
+
+/**
+ * provider에 허용된 인증 방식 목록을 반환합니다.
+ * 반환값은 prompts 선택지와 직접 지정 검증에서 함께 사용하므로, 지원 범위가 바뀌면 이 상수만 수정하면 됩니다.
+ *
+ * @param {string} provider
+ * @returns {string[]}
+ */
+function getSupportedAuthTypes(provider) {
+  return SUPPORTED_AUTH_TYPES_BY_PROVIDER[provider] ?? [];
+}
+
+/**
+ * Provider/Auth 조합이 Phase 4에서 저장 가능한지 확인합니다.
+ * oauth는 validator에는 존재하지만 아직 API 흐름과 토큰 저장 정책이 완성되지 않았으므로 명확한 오류로 중단합니다.
+ *
+ * @param {string} provider
+ * @param {string} authType
+ */
+function assertProviderAuthType(provider, authType) {
+  const supportedAuthTypes = getSupportedAuthTypes(provider);
+
+  if (!supportedAuthTypes.includes(authType)) {
+    throw new Error(
+      `${provider} provider는 authType ${authType} 설정을 지원하지 않습니다.`,
+    );
+  }
+}
+
+/**
+ * modelVersion이 직접 입력되었을 때 저장 가능한 문자열인지 확인합니다.
+ * 공백 문자열을 그대로 저장하면 이후 Provider 호출 단계에서 원인을 찾기 어려운 오류가 발생하므로
+ * config 저장 전에 빠르게 차단합니다.
+ *
+ * @param {*} modelVersion
+ */
+function assertModelVersion(modelVersion) {
+  if (!isValidModelVersion(modelVersion)) {
+    throw new Error("modelVersion은 비어 있지 않은 문자열이어야 합니다.");
+  }
+}
+
+/**
+ * 저장 직전에 config에서 secret 성격의 필드를 제거합니다.
+ * API Key는 credentials.json에만 저장해야 하므로, 실수로 config 병합 객체에 포함되더라도 파일에 남지 않게 합니다.
+ *
+ * @param {object} config
+ * @returns {object}
+ */
+function removeSecretConfigFields(config) {
+  const { apiKey, token, secret, password, ...safeConfig } = config;
+
+  return safeConfig;
+}
+
+/**
+ * Provider별 기본 설정을 기존 config와 병합합니다.
+ * localLLM은 endpoint 기본값이 필요하고, 다른 Provider는 기존 baseURL을 보존하되 modelDisplayName은 modelVersion과 맞춥니다.
+ *
+ * @param {object} config
+ * @param {object} params
+ * @param {string} params.provider
+ * @param {string} params.authType
+ * @param {string} params.modelVersion
+ * @returns {object}
+ */
+function buildModelConfig(config, { provider, authType, modelVersion }) {
+  const nextConfig = {
+    ...config,
+    provider,
+    authType,
+    modelVersion,
+    modelDisplayName: modelVersion,
+  };
+
+  if (provider === "localLLM") {
+    return removeSecretConfigFields(
+      buildLocalLLMConfig(nextConfig, { authType, modelVersion }),
+    );
+  }
+
+  return removeSecretConfigFields(nextConfig);
+}
+
+/**
+ * API Key가 필요한 Provider인 경우 credentials 저장소에 key가 있는지 확인하고, 없으면 secret prompt로 입력받아 저장합니다.
+ * key의 존재 여부만 판단하며 원문 값은 출력하거나 config에 병합하지 않습니다.
+ *
+ * @param {string} provider
+ * @param {string} authType
+ */
+async function ensureApiCredentials(provider, authType) {
+  if (authType !== "api") {
+    return;
+  }
+
+  const existingKey = getApiKey(provider);
+
+  if (!existingKey) {
+    const apiKey = await promptApiKey(provider);
+    saveApiKey(provider, apiKey);
+  }
+}
+
+/**
+ * Provider가 모델 목록을 제공하면 사용자에게 선택을 요청하고, 목록을 제공하지 않으면 Provider별 기본 모델을 사용합니다.
+ * 직접 지정이 아닌 대화형 흐름에서만 호출되며, openaiCompatible의 외부 endpoint 조회는 별도 confirm 이후에만 수행됩니다.
+ *
+ * @param {object} config
+ * @returns {Promise<string>}
+ */
+async function resolveInteractiveModelVersion(config) {
+  const models = await listProviderModels(config);
+
+  if (models.length > 0) {
+    return selectModelVersion(models);
+  }
+
+  const fallbackModelVersion =
+    config.modelVersion ?? DEFAULT_MODEL_VERSION_BY_PROVIDER[config.provider];
+
+  assertModelVersion(fallbackModelVersion);
+  return fallbackModelVersion;
+}
+
+/**
  * 대화형 UI를 통한 localLLM 모델 선택 흐름입니다.
  *
  * @param {import('../types.js').Config} config
@@ -107,10 +254,7 @@ export async function setupLocalLLMModelSelection({
  * @returns {string[]}
  */
 function getAuthTypesForProvider(provider) {
-  if (provider === "localLLM") {
-    return ["none"];
-  }
-  return ["api", "oauth"];
+  return getSupportedAuthTypes(provider);
 }
 
 /**
@@ -176,6 +320,12 @@ export async function setupModelInteractively({
   }
   // authType이 유효한지 확인
   assertAuthType(selectedAuthType);
+  assertProviderAuthType(selectedProvider, selectedAuthType);
+
+  // 직접 지정된 modelVersion은 UI를 건너뛰기 전에 저장 가능한 값인지 먼저 검증합니다.
+  if (modelVersion !== undefined) {
+    assertModelVersion(modelVersion);
+  }
 
   // modelVersion이 없으면 모델 목록 조회 여부 확인
   const shouldRequestModelList = !modelVersion;
@@ -197,45 +347,22 @@ export async function setupModelInteractively({
   }
 
   // 3. API Key 입력 (필요 시)
-  if (selectedAuthType === "api") {
-    // 기존 API Key 확인
-    const existingKey = getApiKey(selectedProvider);
-    // API Key가 없으면 새로 입력받고 저장
-    if (!existingKey) {
-      const apiKey = await promptApiKey(selectedProvider);
-      saveApiKey(selectedProvider, apiKey);
-    }
-  }
+  await ensureApiCredentials(selectedProvider, selectedAuthType);
 
   // 4. 모델 버전 선택 (없을 경우)
   let selectedModelVersion = modelVersion;
   if (!selectedModelVersion) {
-    // 임시 config 생성 (모델 조회를 위함)
-    const models = await listProviderModels(modelListConfig);
-    //model의 목록이 있으면 modelVersion을 선택 UI를 통해 선택하고, 없으면 기본값을 사용
-    if (models.length > 0) {
-      selectedModelVersion = await selectModelVersion(models);
-    } else {
-      // 모델 목록 조회를 지원하지 않거나 가져올 수 없는 경우 기본값 처리
-      selectedModelVersion = config.modelVersion || "latest";
-    }
+    selectedModelVersion =
+      await resolveInteractiveModelVersion(modelListConfig);
   }
 
   // 5. 최종 설정 병합 및 저장
   // config에 provider와 authType을 추가하여 모델 목록 조회를 위한 설정 객체 생성
-  const nextConfig = {
-    ...config,
+  const nextConfig = buildModelConfig(config, {
     provider: selectedProvider,
     authType: selectedAuthType,
     modelVersion: selectedModelVersion,
-    modelDisplayName: selectedModelVersion,
-  };
-
-  // localLLM 전용 기본값 처리
-  // localLLM이면 baseURL과 port를 설정
-  if (selectedProvider === "localLLM") {
-    Object.assign(nextConfig, buildLocalLLMConfig(nextConfig));
-  }
+  });
 
   // config에 provider와 authType을 추가하여 모델 목록 조회를 위한 설정 객체 생성
   saveConfig(nextConfig);
@@ -251,7 +378,81 @@ export async function setupModelInteractively({
  * @param {*} authType
  * @param {*} modelVersion
  */
+/**
+ * Provider만 CLI 인자로 지정된 경우의 Phase Q 흐름입니다.
+ * Provider 선택 UI는 건너뛰고, 인증 방식과 모델 버전만 필요한 만큼 대화형으로 진행합니다.
+ *
+ * @param {string} provider
+ * @returns {Promise<object>}
+ */
+export async function setupModelWithProvider(provider) {
+  assertProvider(provider);
+  return setupModelInteractively({ provider });
+}
+
+/**
+ * Provider와 authType이 CLI 인자로 지정된 경우의 Phase R 흐름입니다.
+ * Provider/Auth 선택 UI는 건너뛰고, 인증 정보 확인과 모델 버전 선택만 진행합니다.
+ *
+ * @param {string} provider
+ * @param {string} authType
+ * @returns {Promise<object>}
+ */
+export async function setupModelWithProviderAndAuth(provider, authType) {
+  assertProvider(provider);
+  assertAuthType(authType);
+  assertProviderAuthType(provider, authType);
+
+  return setupModelInteractively({ provider, authType });
+}
+
+/**
+ * Provider, authType, modelVersion을 모두 CLI 인자로 받은 Phase S 흐름입니다.
+ * 모든 값이 이미 주어졌으므로 select UI와 모델 목록 조회 없이 검증과 credentials 확인 후 config를 저장합니다.
+ *
+ * @param {string} provider
+ * @param {string} authType
+ * @param {string} modelVersion
+ * @returns {Promise<object>}
+ */
+export async function setupModelDirectly(provider, authType, modelVersion) {
+  assertProvider(provider);
+  assertAuthType(authType);
+  assertProviderAuthType(provider, authType);
+  assertModelVersion(modelVersion);
+
+  const config = loadConfig();
+
+  await ensureApiCredentials(provider, authType);
+
+  const nextConfig = buildModelConfig(config, {
+    provider,
+    authType,
+    modelVersion: modelVersion.trim(),
+  });
+
+  saveConfig(nextConfig);
+  success(`${provider} 紐⑤뜽 ?ㅼ젙????λ릺?덉뒿?덈떎.`);
+
+  return nextConfig;
+}
+
 export async function runModelSetup(provider, authType, modelVersion) {
-  // 모든 인자가 생략되었거나 하나라도 interactive가 필요한 경우 setupModelInteractively 호출
-  return setupModelInteractively({ provider, authType, modelVersion });
+  // modelVersion까지 모두 전달된 경우에는 자동화 환경에서 사용할 수 있도록 UI 없이 직접 저장합니다.
+  if (modelVersion !== undefined) {
+    return setupModelDirectly(provider, authType, modelVersion);
+  }
+
+  // provider와 authType만 전달된 경우에는 모델 선택만 대화형으로 진행합니다.
+  if (authType !== undefined) {
+    return setupModelWithProviderAndAuth(provider, authType);
+  }
+
+  // provider만 전달된 경우에는 Provider 선택을 건너뛰고 나머지 값을 대화형으로 채웁니다.
+  if (provider !== undefined) {
+    return setupModelWithProvider(provider);
+  }
+
+  // 아무 인자도 없으면 전체 대화형 설정 흐름을 실행합니다.
+  return setupModelInteractively();
 }
