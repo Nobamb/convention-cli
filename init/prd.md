@@ -605,15 +605,22 @@ convention -h
 ---
 
 
-8-5. 커밋 확인 질문 설정
+8-5. 커밋 및 전송 확인 질문 설정
 
-사용자는 `convention --question` 또는 `convention -q`로 커밋 메시지 생성 후 확인 질문을 사용할지 설정할 수 있습니다.
+사용자는 `convention --question` 또는 `convention -q`로 커밋 메시지 생성 후 확인 질문 및 외부 AI 전송 확인 질문을 사용할지 설정할 수 있습니다.
 
-- `true`: 기본값입니다. AI가 생성한 커밋 메시지를 보여주고, 이 메시지로 커밋할지 사용자에게 확인합니다.
-- `false`: 확인 질문을 생략합니다. `convention` 실행 시 메시지를 생성한 뒤 바로 `git add`와 `git commit`을 실행합니다.
-- 설정값은 `~/.config/convention/config.json`의 `confirmBeforeCommit`에 저장합니다.
+1. 커밋 전 확인 질문 (confirmBeforeCommit)
+   - `true`: 기본값입니다. AI가 생성한 커밋 메시지를 보여주고, 이 메시지로 커밋할지 사용자에게 확인합니다.
+   - `false`: 확인 질문을 생략합니다. `convention` 실행 시 메시지를 생성한 뒤 바로 `git add`와 `git commit`을 실행합니다.
+
+2. 외부 AI 전송 확인 질문 (confirmExternalTransmission)
+   - `always`: 기본값입니다. 매 파일(또는 batch 실행 시 매번) 외부 AI로 코드를 보내기 전 확인합니다.
+   - `once`: 실행 세션 중 첫 번째 파일에서만 확인합니다. 한 번 승인하면 이후 파일은 자동으로 전송합니다.
+   - `never`: 확인 절차 없이 바로 외부 AI로 코드를 전송합니다.
+
+- 설정값은 `~/.config/convention/config.json`에 저장합니다.
 - 설정 변경은 방향키 선택 UI로 제공하며, 실행 후 커밋 플로우를 수행하지 않습니다.
-- 도움말에는 `-q, --question` 옵션과 true/false 의미를 포함합니다.
+- 도움말에는 `-q, --question` 옵션과 각 설정의 의미를 포함합니다.
 
 
 
