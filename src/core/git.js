@@ -1,5 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { error as logError } from "../utils/logger.js";
+import {
+  error as logError,
+  info as logInfo,
+  success as logSuccess,
+  warn as logWarn,
+} from "../utils/logger.js";
 
 // Git 명령을 실행할 때 공통으로 사용하는 child_process 옵션입니다.
 // encoding을 utf8로 고정해 한글, 일본어, 중국어, emoji가 포함된 Git 출력과 커밋 메시지를 문자열로 다룹니다.
@@ -19,6 +24,41 @@ const UNTRACKED_STATUS_LINE_PATTERN = /^\?\? /m;
 // 모든 Git 명령은 shell 문자열이 아니라 argv 배열로 실행해 파일명, 경로, 커밋 메시지에 포함된 공백과 특수문자를 안전하게 전달합니다.
 function runGit(args) {
   return execFileSync("git", args, GIT_COMMAND_OPTIONS);
+}
+
+// 사용자에게 보여줘도 되는 브랜치 이름만 가져옵니다.
+// remote URL, credential helper 출력, 인증 실패 stderr는 포함하지 않도록 stdout만 읽고 stderr는 버립니다.
+function getCurrentBranchName() {
+  try {
+    return execFileSync("git", ["branch", "--show-current"], {
+      ...GIT_COMMAND_OPTIONS,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+// 현재 브랜치에 upstream이 설정되어 있는지 확인합니다.
+// upstream 이름(origin/main 같은 ref 이름)은 안내에 사용할 수 있지만, 원격 URL은 절대 조회하거나 출력하지 않습니다.
+function getCurrentUpstreamName() {
+  try {
+    return execFileSync("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], {
+      ...GIT_COMMAND_OPTIONS,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+function buildPushFailureMessage(branchName, upstreamName) {
+  const branchLabel = branchName || "current branch";
+  const upstreamHint = upstreamName
+    ? `Upstream: ${upstreamName}.`
+    : "No upstream branch was detected. You may need to set an upstream first.";
+
+  return `Failed to push ${branchLabel}. ${upstreamHint} Remote URL and authentication details were hidden.`;
 }
 
 // diff를 AI prompt로 보내기 전에 제외해야 하는 민감 파일명 후보입니다.
@@ -296,5 +336,54 @@ export function commit(message, files = []) {
     // nothing to commit, Git lock, 권한 문제 같은 실제 Git 실패는 상위 commit workflow에서 사용자 안내를 결정하도록 전파합니다.
     logError("Failed to create commit.");
     throw error;
+  }
+}
+
+// 현재 브랜치를 원격 저장소로 전파합니다.
+//
+// Phase U의 --push는 독립 실행 명령이 아니라 "커밋 성공 이후 후속 작업"입니다. 따라서 이 함수는 commit flow에서
+// 새 커밋이 만들어진 뒤에만 호출되어야 하며, 자체적으로 git add/commit 같은 다른 히스토리 변경 작업을 하지 않습니다.
+//
+// 보안상 Git stderr를 그대로 출력하지 않습니다. 인증 실패 메시지에는 remote URL, 토큰, 사용자명, credential helper 정보가
+// 섞일 수 있으므로 사용자에게는 브랜치와 upstream 수준의 안전한 안내만 보여주고, 원본 오류는 새 안전한 Error로 대체합니다.
+export function push() {
+  const branchName = getCurrentBranchName();
+  const upstreamName = getCurrentUpstreamName();
+
+  if (branchName) {
+    logInfo(
+      upstreamName
+        ? `Pushing branch ${branchName} to ${upstreamName}.`
+        : `Pushing branch ${branchName}. No upstream branch was detected.`,
+    );
+  } else {
+    logWarn("Current branch name could not be detected. Trying git push with the current checkout.");
+  }
+
+  try {
+    // shell 문자열을 사용하지 않고 argv 배열로 실행해 브랜치명, path, 메시지 등이 shell 해석을 거치지 않게 합니다.
+    runGit(["push"]);
+    logSuccess(branchName ? `Pushed branch ${branchName}.` : "Push completed.");
+  } catch {
+    const message = buildPushFailureMessage(branchName, upstreamName);
+    logError(message);
+    throw new Error(message);
+  }
+}
+
+// 최근 커밋 1개만 취소합니다.
+//
+// 보안 및 데이터 보호 규칙상 reset 대상 ref나 reset mode를 사용자 입력으로 받지 않습니다.
+// 허용되는 명령은 `git reset HEAD~1`뿐이며, hard reset 같은 파괴적 옵션은 구현하지 않습니다.
+// 기본 reset은 mixed reset이므로 HEAD는 이전 커밋으로 이동하지만 최근 커밋의 변경사항은 working tree에 남습니다.
+export function resetLastCommit() {
+  try {
+    // shell 문자열을 만들지 않고 argv 배열을 사용합니다.
+    // 이렇게 하면 ref 문자열이 shell에서 재해석될 여지가 없고, 허용된 HEAD~1 외의 임의 ref도 전달할 수 없습니다.
+    runGit(["reset", "HEAD~1"]);
+  } catch {
+    // Git stderr에는 경로, 원격 URL, credential helper 출력, 환경 정보가 섞일 수 있으므로 그대로 노출하지 않습니다.
+    // 호출자는 이 안전한 오류 메시지만 사용자에게 보여주고 실패 상태를 처리합니다.
+    throw new Error("Failed to reset last commit. Git error details were hidden.");
   }
 }
