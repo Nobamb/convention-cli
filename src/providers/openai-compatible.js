@@ -1,5 +1,6 @@
 import { getApiKey } from "../auth/apiKey.js";
 import { isValidBaseURL } from "../utils/validator.js";
+import { createProviderHTTPError } from "./errors.js";
 
 // 로컬 서버가 꺼져 있거나 응답이 늦을 경우 CLI가 무한히 대기하는 것을 방지하기 위한 Timeout
 // LLM의 생성(Inference) 작업은 시간이 오래 걸릴 수 있으므로 별도의 긴 타임아웃(기본 60초)을 설정합니다.
@@ -182,9 +183,13 @@ export async function generateCommitMessage({ prompt, config = {} }) {
       signal: controller.signal,
     });
 
-    // http status code가 200-299가 아니면 error throw
+    // 실패 응답 body는 secret이나 raw prompt 일부를 포함할 수 있으므로 읽지 않고 status만 보존합니다.
     if (!response.ok) {
-      throw new Error("OpenAI-compatible commit message request failed.");
+      throw createProviderHTTPError({
+        provider: "OpenAI-compatible",
+        action: "commit message",
+        response,
+      });
     }
 
     // json 파싱
@@ -238,9 +243,13 @@ export async function listModels(config = {}) {
       signal: controller.signal,
     });
 
-    // http status code가 200-299가 아니면 error throw
+    // 모델 목록 실패도 원문 body를 읽지 않고 status만 안전하게 전달합니다.
     if (!response.ok) {
-      throw new Error("OpenAI-compatible model list request failed.");
+      throw createProviderHTTPError({
+        provider: "OpenAI-compatible",
+        action: "model list",
+        response,
+      });
     }
 
     // json 파싱
