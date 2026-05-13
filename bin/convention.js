@@ -9,6 +9,7 @@ import {
 } from "../src/commands/commit.js";
 import { runQuestionSetup, setLanguage, setMode } from "../src/commands/config.js";
 import { runModelSetup } from "../src/commands/model.js";
+import { runReset } from "../src/commands/reset.js";
 import { error as logError } from "../src/utils/logger.js";
 
 /**
@@ -59,6 +60,16 @@ program
   );
 
 // 옵션 파싱
+program.option(
+  "--push",
+  "커밋이 성공적으로 완료된 경우에만 현재 브랜치를 원격 저장소로 push합니다.",
+);
+
+program.option(
+  "--reset",
+  "최근 커밋 1개를 취소하고 변경사항은 working tree에 남깁니다.",
+);
+
 program.parse(process.argv);
 
 // 옵션 가져오기
@@ -101,22 +112,29 @@ async function main() {
     return;
   }
 
+  // --reset은 commit/push 흐름과 완전히 분리합니다.
+  // 사용자가 --reset --push처럼 함께 입력하더라도 push나 새 commit을 실행하지 않고 reset flow만 수행합니다.
+  if (options.reset) {
+    await runReset();
+    return;
+  }
+
   // step 모드로 커밋
   if (options.step) {
     // step 모드로 커밋을 진행합니다.
-    await runStepCommit();
+    await runStepCommit({ push: options.push });
     return;
   }
 
   // batch 모드로 커밋
   if (options.batch) {
     // batch 모드로 커밋을 진행합니다.
-    await runBatchCommit();
+    await runBatchCommit({ push: options.push });
     return;
   }
 
   // 저장된 설정(config.mode)에 따라 commit flow를 시작합니다.
-  await runDefaultCommit();
+  await runDefaultCommit({ push: options.push });
 }
 
 /**
