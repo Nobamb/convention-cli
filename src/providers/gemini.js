@@ -1,4 +1,5 @@
 import { getApiKey } from "../auth/apiKey.js";
+import { createProviderHTTPError } from "./errors.js";
 
 // 기본 gemini 모델 버전
 const DEFAULT_GEMINI_MODEL = "gemini-3-flash-preview";
@@ -83,13 +84,14 @@ function buildApiKeyHeaders(apiKey, extraHeaders = {}) {
  * @returns
  */
 
-function buildRequestFailureMessage(action, response) {
-  // response status가 정수이면 상태 코드와 함께 메시지를 만듦
-  const status = Number.isInteger(response?.status)
-    ? ` with status ${response.status}`
-    : "";
-  // gemini api 요청 실패 시 메시지를 반환
-  return `Gemini ${action} request failed${status}.`;
+function buildRequestFailureError(action, response) {
+  // 실패 응답 body는 secret이나 provider 진단 정보를 포함할 수 있으므로 절대 읽지 않습니다.
+  // commit flow는 status 속성만 보고 429 사용량 소진 복구 분기로 이동합니다.
+  return createProviderHTTPError({
+    provider: "Gemini",
+    action,
+    response,
+  });
 }
 
 /**
@@ -182,7 +184,7 @@ export async function generateCommitMessage({ prompt, config = {} }) {
 
     // 응답이 정상이 아닐 때 에러를 throw 한다.
     if (!response.ok) {
-      throw new Error(buildRequestFailureMessage("commit message", response));
+      throw buildRequestFailureError("commit message", response);
     }
 
     // 응답을 JSON으로 파싱
@@ -235,7 +237,7 @@ export async function listModels(config = {}) {
 
     // 응답이 정상이 아닐 때 에러를 throw 한다.
     if (!response.ok) {
-      throw new Error(buildRequestFailureMessage("model list", response));
+      throw buildRequestFailureError("model list", response);
     }
 
     // 응답을 JSON으로 파싱
