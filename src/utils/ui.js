@@ -43,6 +43,42 @@ export async function confirmCommit(message, { file } = {}) {
 }
 
 /**
+ * 일반적인 위험 작업을 실행하기 전에 사용자 확인을 받습니다.
+ *
+ * commit confirm과 분리해 둔 이유는 reset, push 같은 Git 히스토리 관련 작업이
+ * commit message 표시 UI와 다른 문구를 가져야 하기 때문입니다. 기본 선택값은 false로 두어
+ * 사용자가 실수로 Enter를 눌렀을 때 reset 같은 작업이 바로 실행되지 않게 합니다.
+ *
+ * @param {string} message 사용자에게 보여줄 확인 문구
+ * @returns {Promise<boolean>} 사용자가 명시적으로 승인하면 true
+ */
+export async function confirmAction(message) {
+  try {
+    const response = await prompts(
+      {
+        type: "confirm",
+        name: "confirmed",
+        message,
+        initial: false,
+      },
+      {
+        // Ctrl+C, ESC, 테스트 주입 Error처럼 prompt가 취소되는 상황은 승인으로 볼 수 없습니다.
+        // prompts는 onCancel이 true를 반환하면 질문 흐름을 계속 진행하므로 false를 반환해
+        // 지금까지의 응답만 받고 종료시킨 뒤 아래에서 명시적인 true 여부만 확인합니다.
+        onCancel: () => false,
+      },
+    );
+
+    // 응답 객체가 비어 있거나 confirmed가 undefined인 경우도 모두 거부로 처리합니다.
+    // reset/push 같은 위험 작업은 사용자가 명확히 Yes를 고른 경우에만 실행되어야 합니다.
+    return response?.confirmed === true;
+  } catch {
+    // prompt 구성 오류나 예외가 발생해도 위험 작업을 진행하지 않도록 안전한 기본값을 반환합니다.
+    return false;
+  }
+}
+
+/**
  * baseURL에서 안전한 endpoint 레이블 생성
  * @param {string} baseURL
  * @returns {string|null}
