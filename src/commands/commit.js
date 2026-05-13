@@ -10,11 +10,16 @@ import {
   getChangedFiles,
   getFileDiffs,
   isGitRepository,
+  push,
 } from "../core/git.js";
 import { buildCommitPrompt } from "../core/prompt.js";
 import { maskSensitiveDiff } from "../core/security.js";
 import { error, info, success, warn } from "../utils/logger.js";
-import { confirmCommit, confirmExternalAITransmission } from "../utils/ui.js";
+import {
+  confirmAction,
+  confirmCommit,
+  confirmExternalAITransmission,
+} from "../utils/ui.js";
 import { isValidMode } from "../utils/validator.js";
 
 const LOCAL_LLM_LOCAL_HOSTNAMES = new Set([
@@ -206,6 +211,28 @@ function joinDiffs(fileDiffs) {
   return fileDiffs.map(({ diff }) => diff).join("");
 }
 
+async function pushAfterSuccessfulCommit(options = {}) {
+  // push는 원격 저장소에 Git 히스토리를 전파하므로 새 커밋이 실제로 만들어진 뒤에만 실행합니다.
+  if (!options.push) {
+    return;
+  }
+
+  // push 확인은 commit message 확인과 별개입니다. confirmBeforeCommit=false는 커밋 확인만 생략하는 설정이므로,
+  // 원격 히스토리를 바꾸는 push는 항상 별도 confirmAction 승인을 받아야 합니다.
+  const approved = await confirmAction(
+    "커밋이 완료되었습니다. 현재 브랜치를 원격 저장소로 push할까요?",
+  );
+
+  if (!approved) {
+    warn("사용자가 push를 취소했습니다. 로컬 커밋은 유지되고 원격 저장소는 변경되지 않았습니다.");
+    return;
+  }
+
+  // 실제 push는 core wrapper에 위임합니다. wrapper는 Git stderr를 그대로 노출하지 않아
+  // remote URL, token, credential helper 출력 같은 민감 정보가 사용자 메시지에 섞이지 않게 합니다.
+  push();
+}
+
 /**
  * 하나의 diff를 기준으로 AI commit message를 만들고 git commit에 넣기 좋은 문자열로 정리합니다.
  *
@@ -231,17 +258,17 @@ async function createCommitMessage({ diff, language, mode, config }) {
  * 유효하지 않은 mode는 batch로 오해하지 않고 기본값인 step으로 되돌립니다. 이 함수는 라우팅만 담당하며
  * Git diff 추출, 사용자 confirm, staging, commit은 각각 `runStepCommit()` 또는 `runBatchCommit()`에 위임합니다.
  */
-export async function runDefaultCommit() {
+export async function runDefaultCommit(options = {}) {
   const config = loadRuntimeConfig();
   const mode = isValidMode(config.mode) ? config.mode : DEFAULT_CONFIG.mode;
 
   // batch 모드이면 batch commit 실행
   if (mode === "batch") {
-    return runBatchCommit();
+    return runBatchCommit(options);
   }
 
   // step 모드이면 step commit 실행
-  return runStepCommit();
+  return runStepCommit(options);
 }
 
 /**
@@ -249,7 +276,7 @@ export async function runDefaultCommit() {
  * 한 파일의 confirm을 거부하는 것은 오류가 아니므로 다음 파일로 넘어갑니다. 반면 AI 생성, staging, commit
  * 자체가 실패하면 Git 상태를 애매하게 만들 수 있으므로 예외를 상위로 전달해 즉시 중단합니다.
  */
-export async function runStepCommit() {
+export async function runStepCommit(options = {}) {
   // Git 저장소인지 확인
   if (!isGitRepository()) {
     error("Git 저장소 안에서 실행해야 합니다.");
@@ -334,6 +361,9 @@ export async function runStepCommit() {
 
   // 커밋 횟수 확인
   // 승인한 커밋이 없으면 안내 메시지 출력
+  // step 모드는 파일별로 커밋을 건너뛸 수 있으므로, 최소 1개 이상 성공했을 때만 push를 후속 실행합니다.
+  await pushAfterSuccessfulCommit({ push: options.push && committedCount > 0 });
+
   if (committedCount === 0) {
     info("사용자가 승인한 커밋이 없습니다.");
   }
@@ -344,7 +374,7 @@ export async function runStepCommit() {
  * 무조건 올리지 않고, 민감 파일 제외를 통과한 `fileDiffs` 목록만 `addFile(file)`로 staging합니다. 결과적으로
  * batch mode는 "하나의 commit message"를 만들지만, 커밋 대상은 검증된 파일로 제한됩니다.
  */
-export async function runBatchCommit() {
+export async function runBatchCommit(options = {}) {
   // Git 저장소인지 확인
   if (!isGitRepository()) {
     error("Git 저장소 안에서 실행해야 합니다.");
@@ -421,6 +451,8 @@ export async function runBatchCommit() {
   }
   // 커밋
   commit(message, filesToCommit);
+  // batch 모드는 단일 커밋이 성공한 직후에만 push합니다. commit()이 실패하면 예외가 전파되어 여기까지 오지 않습니다.
+  await pushAfterSuccessfulCommit(options);
   // 성공
   success("Batch 커밋이 완료되었습니다.");
 }
