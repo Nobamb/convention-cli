@@ -1,5 +1,6 @@
 import { DEFAULT_LOCAL_LLM_BASE_URL } from "../config/defaults.js";
 import { isValidBaseURL } from "../utils/validator.js";
+import { createProviderHTTPError } from "./errors.js";
 
 // 로컬 서버가 꺼져 있거나 응답이 늦을 경우 CLI가 무한히 대기하는 것을 방지하기 위한 Timeout(기본 5초)
 // 로컬 LLM의 생성(Inference) 작업은 시간이 오래 걸릴 수 있으므로 별도의 긴 타임아웃(기본 60초)을 설정합니다.
@@ -52,7 +53,7 @@ function buildModelsURL(baseURL) {
  * 로컬 서버가 꺼져 있거나 응답이 늦을 경우 CLI가 무한히 대기하는 것을 방지하기 위해
  * AbortController를 이용한 Timeout(기본 5초) 처리를 수행합니다.
  */
-async function fetchJSON(url, timeoutMs = DEFAULT_TIMEOUT_MS) {
+async function fetchJSON(url, timeoutMs = DEFAULT_TIMEOUT_MS, action = "request") {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -66,7 +67,13 @@ async function fetchJSON(url, timeoutMs = DEFAULT_TIMEOUT_MS) {
 
     // HTTP 상태 코드가 200-299가 아닐 경우 에러 발생
     if (!response.ok) {
-      throw new Error(`localLLM 요청 실패 (상태 코드: ${response.status})`);
+      // 실패 응답 body에는 서버 내부 진단 정보나 요청 일부가 포함될 수 있으므로 읽지 않습니다.
+      // status만 보존해야 `--model` 흐름에서 429 사용량 소진 복구 UI로 안전하게 분기할 수 있습니다.
+      throw createProviderHTTPError({
+        provider: "localLLM",
+        action,
+        response,
+      });
     }
 
     // JSON 파싱
@@ -119,6 +126,7 @@ export async function checkConnection(config = {}) {
     await fetchJSON(
       buildModelsURL(normalizedConfig.baseURL),
       normalizedConfig.timeoutMs,
+      "connection check",
     );
     // 응답 가능
     return true;
@@ -145,9 +153,16 @@ export async function listModels(config = {}) {
     payload = await fetchJSON(
       buildModelsURL(normalizedConfig.baseURL),
       normalizedConfig.timeoutMs,
+      "model list",
     );
     // 연결 실패
-  } catch {
+  } catch (error) {
+    // HTTP 429 같은 provider 응답 오류는 상위 --model 복구 흐름이 status를 보고 처리해야 하므로 그대로 전파합니다.
+    // 네트워크 연결 실패, timeout, JSON 파싱 실패 등만 일반 연결 안내 메시지로 감쌉니다.
+    if (Number.isInteger(error?.status)) {
+      throw error;
+    }
+
     throw new Error(
       "로컬 LLM 서버에 연결할 수 없습니다. Ollama 또는 LM Studio가 실행 중인지 확인해 주세요.",
     );
@@ -214,7 +229,13 @@ export async function generateCommitMessage({ prompt, config = {} }) {
 
     // HTTP 상태 코드가 200-299가 아닐 경우 에러 발생
     if (!response.ok) {
-      throw new Error("localLLM 커밋 메시지 생성 요청에 실패했습니다.");
+      // 로컬/원격 OpenAI 호환 서버도 429를 반환할 수 있습니다.
+      // 응답 body에는 prompt 일부나 서버 진단 정보가 들어갈 수 있으므로 읽지 않고 status만 보존합니다.
+      throw createProviderHTTPError({
+        provider: "localLLM",
+        action: "commit message",
+        response,
+      });
     }
     // 응답 JSON 파싱
     const payload = await response.json();
