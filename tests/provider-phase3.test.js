@@ -110,6 +110,35 @@ test("L Gemini provider errors omit request URL, API key, and raw response body"
   );
 });
 
+test("L Gemini provider preserves HTTP 429 status without raw response body", async () => {
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 429,
+    async text() {
+      return "usage exhausted body with test-key";
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      generateWithProvider({
+        prompt: "Generate a commit message",
+        config: {
+          provider: "gemini",
+          apiKey: "test-key",
+          modelVersion: "gemini-test",
+          timeoutMs: 10,
+        },
+      }),
+    (error) => {
+      assert.equal(error.status, 429);
+      assert.match(error.message, /status 429/);
+      assert.doesNotMatch(error.message, /test-key|usage exhausted body/);
+      return true;
+    },
+  );
+});
+
 test("M OpenAI-compatible provider calls chat completions with bearer auth", async () => {
   let requestedURL;
   let requestHeaders;
@@ -191,6 +220,33 @@ test("M OpenAI-compatible rejects baseURL secrets before fetch", async () => {
     },
   );
   assert.equal(fetchCalled, false);
+});
+
+test("M OpenAI-compatible provider preserves HTTP 429 status safely", async () => {
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 429,
+    async text() {
+      return "raw body contains test-key";
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      generateCommitMessage("Generate a commit message", {
+        provider: "openaiCompatible",
+        apiKey: "test-key",
+        baseURL: "https://example.test/v1",
+        modelVersion: "test-model",
+        timeoutMs: 10,
+      }),
+    (error) => {
+      assert.equal(error.status, 429);
+      assert.match(error.message, /status 429/);
+      assert.doesNotMatch(error.message, /test-key|raw body/);
+      return true;
+    },
+  );
 });
 
 test("N provider routing includes gemini and OpenAI-compatible providers", () => {
