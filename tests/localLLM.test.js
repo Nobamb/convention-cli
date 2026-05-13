@@ -87,3 +87,28 @@ test('G-3 listModels fails clearly for empty or invalid model lists', async () =
 
   await assert.rejects(() => listModels({}), /사용할 수 있는 모델을 찾지 못했습니다/);
 });
+
+test('G-4 listModels preserves HTTP 429 status without reading raw response body', async () => {
+  let rawBodyRead = false;
+
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 429,
+    async text() {
+      rawBodyRead = true;
+      return 'raw body with secret';
+    },
+  });
+
+  await assert.rejects(
+    () => listModels({}),
+    (error) => {
+      assert.equal(error.status, 429);
+      assert.match(error.message, /localLLM model list request failed with status 429\./);
+      assert.doesNotMatch(error.message, /secret/);
+      return true;
+    },
+  );
+
+  assert.equal(rawBodyRead, false);
+});
