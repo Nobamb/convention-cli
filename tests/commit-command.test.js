@@ -99,6 +99,12 @@ function createTempRepo() {
   return repoDir;
 }
 
+function createBareRemote() {
+  const remoteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'convention-cli-command-remote-'));
+  runGit(remoteDir, ['init', '--bare']);
+  return remoteDir;
+}
+
 function cleanupTempRepo(repoDir) {
   const resolvedRepo = path.resolve(repoDir);
   const resolvedTemp = path.resolve(os.tmpdir());
@@ -123,6 +129,20 @@ async function withRepo(callback) {
   }
 }
 
+async function withRepoAndRemote(callback) {
+  const remoteDir = createBareRemote();
+
+  try {
+    return await withRepo(async (repoDir) => {
+      runGit(repoDir, ['remote', 'add', 'origin', remoteDir]);
+      runGit(repoDir, ['push', '-u', 'origin', 'HEAD']);
+      return callback(repoDir, remoteDir);
+    });
+  } finally {
+    cleanupTempRepo(remoteDir);
+  }
+}
+
 function saveRuntimeConfig(config = {}) {
   store.saveConfig({
     ...DEFAULT_CONFIG,
@@ -134,6 +154,12 @@ function saveRuntimeConfig(config = {}) {
 
 function getCommitMessages(repoDir) {
   return runGit(repoDir, ['log', '--pretty=%s'])
+    .trim()
+    .split(/\r?\n/);
+}
+
+function getRemoteCommitMessages(remoteDir) {
+  return runGit(remoteDir, ['log', '--pretty=%s'])
     .trim()
     .split(/\r?\n/);
 }
@@ -175,6 +201,71 @@ test('runStepCommit creates one commit per committable file', { skip: skipWithou
 
     assert.equal(messages.filter((message) => message === 'chore: update project files').length, 3);
     assert.equal(getStatus(repoDir), '');
+  });
+});
+
+test('runBatchCommit pushes only after a successful batch commit', { skip: skipWithoutGit }, async () => {
+  await withRepoAndRemote(async (repoDir, remoteDir) => {
+    saveRuntimeConfig({ mode: 'batch' });
+    writeFile(repoDir, 'README.md', 'batch push change\n');
+    prompts.inject([true]);
+
+    await commands.runBatchCommit({ push: true });
+
+    const localMessages = getCommitMessages(repoDir);
+    const remoteMessages = getRemoteCommitMessages(remoteDir);
+
+    assert.equal(localMessages[0], 'chore: update project files');
+    assert.equal(remoteMessages[0], 'chore: update project files');
+  });
+});
+
+test('runStepCommit pushes after at least one successful step commit', { skip: skipWithoutGit }, async () => {
+  await withRepoAndRemote(async (repoDir, remoteDir) => {
+    saveRuntimeConfig({ mode: 'step' });
+    writeFile(repoDir, 'README.md', 'step push readme\n');
+    writeFile(repoDir, 'src/app.js', 'console.log("step push");\n');
+    prompts.inject([true]);
+
+    await commands.runStepCommit({ push: true });
+
+    const remoteMessages = getRemoteCommitMessages(remoteDir);
+
+    assert.equal(remoteMessages.filter((message) => message === 'chore: update project files').length, 2);
+  });
+});
+
+test('runDefaultCommit uses stored mode before push', { skip: skipWithoutGit }, async () => {
+  await withRepoAndRemote(async (repoDir, remoteDir) => {
+    saveRuntimeConfig({ mode: 'batch' });
+    writeFile(repoDir, 'README.md', 'default push batch change\n');
+    writeFile(repoDir, 'src/app.js', 'console.log("default push");\n');
+    prompts.inject([true]);
+
+    await commands.runDefaultCommit({ push: true });
+
+    const remoteMessages = getRemoteCommitMessages(remoteDir);
+
+    assert.equal(remoteMessages.filter((message) => message === 'chore: update project files').length, 1);
+  });
+});
+
+test('runBatchCommit keeps local commit but skips push when push confirmation is rejected', { skip: skipWithoutGit }, async () => {
+  await withRepoAndRemote(async (repoDir, remoteDir) => {
+    saveRuntimeConfig({
+      mode: 'batch',
+      confirmBeforeCommit: false,
+    });
+    writeFile(repoDir, 'README.md', 'batch push rejected change\n');
+    prompts.inject([false]);
+
+    await commands.runBatchCommit({ push: true });
+
+    const localMessages = getCommitMessages(repoDir);
+    const remoteMessages = getRemoteCommitMessages(remoteDir);
+
+    assert.equal(localMessages[0], 'chore: update project files');
+    assert.equal(remoteMessages[0], 'chore: initial commit');
   });
 });
 
