@@ -548,3 +548,149 @@ test('runBatchCommit sends masked diff to OpenAI-compatible provider and does no
     assert.equal(getCommitMessages(repoDir)[0], 'chore: update project files');
   });
 });
+
+test('runBatchCommit stops safely on Gemini 429 when user chooses stop', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    let fetchCalled = false;
+
+    globalThis.fetch = async () => {
+      fetchCalled = true;
+
+      return {
+        ok: false,
+        status: 429,
+        async text() {
+          return 'raw body with test-key';
+        },
+      };
+    };
+
+    prompts.inject([true, 'stop']);
+    saveRuntimeConfig({
+      mode: 'batch',
+      provider: 'gemini',
+      authType: 'api',
+      apiKey: 'test-key',
+      modelVersion: 'gemini-test',
+      confirmBeforeCommit: false,
+    });
+    writeFile(repoDir, 'README.md', 'gemini exhausted stop change\n');
+
+    await commands.runBatchCommit();
+
+    assert.equal(fetchCalled, true);
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: initial commit');
+    assert.match(getStatus(repoDir), /^ M README\.md/m);
+  });
+});
+
+test('runBatchCommit retries Gemini 429 with a replacement API key before committing', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    const apiKeys = [];
+
+    globalThis.fetch = async (_url, options = {}) => {
+      apiKeys.push(options.headers['x-goog-api-key']);
+
+      if (apiKeys.length === 1) {
+        return {
+          ok: false,
+          status: 429,
+          async text() {
+            return 'raw body with old-key';
+          },
+        };
+      }
+
+      return {
+        ok: true,
+        async json() {
+          return {
+            candidates: [
+              {
+                content: {
+                  parts: [{ text: 'chore: update project files' }],
+                },
+              },
+            ],
+          };
+        },
+      };
+    };
+
+    prompts.inject([true, 'replaceApiKey', 'new-key', true]);
+    saveRuntimeConfig({
+      mode: 'batch',
+      provider: 'gemini',
+      authType: 'api',
+      apiKey: 'old-key',
+      modelVersion: 'gemini-test',
+      confirmBeforeCommit: false,
+    });
+    writeFile(repoDir, 'README.md', 'gemini exhausted retry key change\n');
+
+    await commands.runBatchCommit();
+
+    assert.deepEqual(apiKeys, ['old-key', 'new-key']);
+    assert.equal(store.loadCredentials().gemini.apiKey, 'new-key');
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: update project files');
+    assert.equal(getStatus(repoDir), '');
+  });
+});
+
+test('runBatchCommit can switch from exhausted Gemini to localLLM and retry safely', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    const requestedURLs = [];
+
+    globalThis.fetch = async (url) => {
+      requestedURLs.push(url);
+
+      if (requestedURLs.length === 1) {
+        return {
+          ok: false,
+          status: 429,
+          async text() {
+            return 'raw body with gemini-key';
+          },
+        };
+      }
+
+      if (String(url).endsWith('/models')) {
+        return {
+          ok: true,
+          async json() {
+            return { data: [{ id: 'test-local-model' }] };
+          },
+        };
+      }
+
+      return {
+        ok: true,
+        async json() {
+          return {
+            choices: [{ message: { content: 'chore: update project files' } }],
+          };
+        },
+      };
+    };
+
+    prompts.inject([true, 'switchModel', 'localLLM', 'test-local-model']);
+    saveRuntimeConfig({
+      mode: 'batch',
+      provider: 'gemini',
+      authType: 'api',
+      apiKey: 'gemini-key',
+      modelVersion: 'gemini-test',
+      confirmBeforeCommit: false,
+    });
+    writeFile(repoDir, 'README.md', 'switch provider after exhausted change\n');
+
+    await commands.runBatchCommit();
+
+    assert.match(String(requestedURLs[0]), /generativelanguage/);
+    assert.equal(requestedURLs[1], 'http://localhost:11434/v1/models');
+    assert.equal(requestedURLs[2], 'http://localhost:11434/v1/chat/completions');
+    assert.equal(store.loadConfig().provider, 'localLLM');
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: update project files');
+    assert.equal(getStatus(repoDir), '');
+  });
+});
