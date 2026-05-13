@@ -85,7 +85,19 @@ convention --language en
 convention --question
 # Short alias
 convention -q
+
+# Configure an AI provider/model
+convention --model
+convention --model gemini api
+convention --model openaiCompatible api "gpt-compatible"
+convention --model localLLM none "qwen2.5:7b"
 ```
+
+### API Key and 429 Recovery
+
+API keys are stored in `~/.config/convention/credentials.json`, not in `config.json`. If `--model` is run for an API-key provider that already has a stored key, Convention CLI asks whether to replace it before continuing.
+
+During `convention`, `--step`, or `--batch`, a Gemini/OpenAI-compatible HTTP 429 or usage-exhausted response opens a terminal choice: enter another API key and retry, switch provider/model through the existing model setup flow and retry, or stop without staging or committing.
 
 ---
 
