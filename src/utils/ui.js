@@ -43,6 +43,79 @@ export async function confirmCommit(message, { file } = {}) {
 }
 
 /**
+ * 이미 저장된 API Key를 교체할지 확인합니다.
+ *
+ * 실제 key 값은 credentials 저장소 안에만 두고, 화면에는 provider 이름만 보여줍니다.
+ * 사용자가 거절하면 기존 key를 그대로 사용하며 추가 secret 입력 prompt를 띄우지 않습니다.
+ */
+export async function confirmReplaceApiKey(provider) {
+  const response = await prompts({
+    type: "confirm",
+    name: "replaceApiKey",
+    message: `${provider} API Key가 이미 저장되어 있습니다. 새 API Key로 교체할까요?`,
+    initial: false,
+  });
+
+  return response.replaceApiKey === true;
+}
+
+/**
+ * HTTP 429(사용량 소진) 또는 연결 실패 같은 AI Provider 오류가 발생했을 때 다음 행동을 선택합니다.
+ *
+ * @param {object} options
+ * @param {string} [options.message] 사용자에게 보여줄 안내 문구 (기본값은 429 기준)
+ * @param {boolean} [options.allowApiKey] API Key 교체 선택지를 보여줄지 여부
+ * @param {boolean} [options.allowRetry] 현재 설정 그대로 다시 시도할 선택지를 보여줄지 여부
+ * @returns {Promise<string>} 선택한 동작 ('retry', 'replaceApiKey', 'switchModel', 'stop')
+ */
+export async function selectAIUsageExhaustedAction({
+  message = "AI Provider 사용량 한도 또는 rate limit에 도달했습니다. 어떻게 진행할까요?",
+  allowApiKey = false,
+  allowRetry = false,
+} = {}) {
+  const choices = [];
+
+  // 로컬 서버 기동 확인 후 바로 다시 찌르고 싶을 때를 위해 '재시도' 옵션을 추가할 수 있습니다.
+  if (allowRetry) {
+    choices.push({
+      title: "현재 설정으로 다시 시도",
+      value: "retry",
+    });
+  }
+
+  // API Key가 필요한 provider(Gemini 등)에서만 "다른 API Key 입력" 선택지를 보여줍니다.
+  if (allowApiKey) {
+    choices.push({
+      title: "다른 API Key 입력 후 재시도",
+      value: "replaceApiKey",
+    });
+  }
+
+  choices.push(
+    {
+      title: "Provider/모델 설정을 바꾼 뒤 재시도",
+      value: "switchModel",
+    },
+    {
+      title: "커밋하지 않고 안전하게 중단",
+      value: "stop",
+    },
+  );
+
+  const response = await prompts({
+    type: "select",
+    name: "action",
+    message,
+    choices,
+  });
+
+  // 선택이 취소되거나 유효하지 않은 응답인 경우 'stop'을 반환하여 안전하게 종료를 유도합니다.
+  return choices.some((choice) => choice.value === response.action)
+    ? response.action
+    : "stop";
+}
+
+/**
  * 일반적인 위험 작업을 실행하기 전에 사용자 확인을 받습니다.
  *
  * commit confirm과 분리해 둔 이유는 reset, push 같은 Git 히스토리 관련 작업이
