@@ -2,10 +2,13 @@ import { DEFAULT_LOCAL_LLM_BASE_URL, PROVIDERS } from "../config/defaults.js";
 import { loadConfig, saveConfig } from "../config/store.js";
 import { getApiKey, promptApiKey, saveApiKey } from "../auth/apiKey.js";
 import { listProviderModels } from "../providers/index.js";
+import { isUsageExhaustedError } from "../providers/errors.js";
 import { normalizeLocalLLMConfig } from "../providers/localLLM.js";
 import { success, warn } from "../utils/logger.js";
 import {
   confirmExternalProviderRequest,
+  confirmReplaceApiKey,
+  selectAIUsageExhaustedAction,
   selectAuthType,
   selectModelVersion,
   selectProvider,
@@ -181,17 +184,50 @@ function buildModelConfig(config, { provider, authType, modelVersion }) {
  * @param {string} provider
  * @param {string} authType
  */
-async function ensureApiCredentials(provider, authType) {
+async function ensureApiCredentials(
+  provider,
+  authType,
+  { promptForExistingKey = true } = {},
+) {
   if (authType !== "api") {
     return;
   }
 
   const existingKey = getApiKey(provider);
 
-  if (!existingKey) {
-    const apiKey = await promptApiKey(provider);
-    saveApiKey(provider, apiKey);
+  if (existingKey) {
+    if (!promptForExistingKey) {
+      return;
+    }
+
+    // 이미 저장된 key가 있으면 사용자가 모델만 바꾸려는 상황일 수 있습니다.
+    // key 원문은 절대 보여주지 않고, 교체 여부만 확인한 뒤 Yes일 때만 새 secret을 입력받습니다.
+    const shouldReplaceApiKey = await confirmReplaceApiKey(provider);
+
+    if (!shouldReplaceApiKey) {
+      return;
+    }
   }
+
+  // 저장된 key가 없거나 사용자가 교체를 선택한 경우에만 password prompt를 띄웁니다.
+  // 입력값은 credentials.json으로만 저장하고 config.json에는 병합하지 않습니다.
+  const apiKey = await promptApiKey(provider);
+  saveApiKey(provider, apiKey);
+}
+
+/**
+ * API Key provider에 이미 저장된 key가 있는 경우, 모델 목록 조회나 모델 선택을 계속하기 전에 교체 여부를 먼저 묻습니다.
+ *
+ * 저장된 key가 없는 첫 설정에서는 여기서 아무 것도 하지 않습니다. 새 key 입력은 기존 외부 요청 확인 gate 이후
+ * `ensureApiCredentials()`에서 처리해, 사용자가 model list 요청을 거절한 경우 secret prompt가 뜨지 않도록 유지합니다.
+ */
+async function askToReplaceExistingApiCredentials(provider, authType) {
+  if (authType !== "api" || !getApiKey(provider)) {
+    return false;
+  }
+
+  await ensureApiCredentials(provider, authType);
+  return true;
 }
 
 /**
@@ -213,6 +249,75 @@ async function resolveInteractiveModelVersion(config) {
 
   assertModelVersion(fallbackModelVersion);
   return fallbackModelVersion;
+}
+
+/**
+ * 모델 목록 조회 중 HTTP 429가 발생하거나 연결에 실패했을 때 사용자 선택에 따라 안전하게 복구합니다.
+ *
+ * --model 흐름에서도 commit flow와 같은 원칙을 적용합니다. 실패 응답 본문은 provider 계층에서 읽지 않으므로
+ * 여기서는 status만 보고 분기합니다. API Key 교체는 credentials.json에만 저장하고, 즉시 재시도할 수 있도록
+ * 현재 메모리 config에도 새 key를 임시로 넣습니다.
+ */
+async function resolveInteractiveModelVersionWithRecovery(config) {
+  let currentConfig = config;
+
+  while (true) {
+    try {
+      return {
+        switchedConfig: null,
+        modelVersion: await resolveInteractiveModelVersion(currentConfig),
+        config: currentConfig,
+      };
+    } catch (error) {
+      const is429 = isUsageExhaustedError(error);
+      const isHttpError = Number.isInteger(error?.status);
+
+      // 429(사용량 소진)가 아니더라도 모델 목록을 가져오지 못했다면(연결 실패 등)
+      // 사용자에게 설정을 수정하거나 재시도할 기회를 주는 것이 좋습니다.
+      if (is429) {
+        warn("모델 목록 조회 중 AI Provider 사용량 한도 또는 rate limit에 도달했습니다.");
+      } else {
+        warn(`모델 목록을 가져오지 못했습니다: ${error.message}`);
+      }
+
+      const action = await selectAIUsageExhaustedAction({
+        message: is429
+          ? "AI Provider 사용량 한도에 도달했습니다. 어떻게 할까요?"
+          : "모델 목록을 가져오지 못했습니다. 어떻게 할까요?",
+        allowApiKey: currentConfig.authType === "api",
+        // 연결 실패(Ollama 미실행 등)인 경우 서버 기동 후 바로 '재시도'할 수 있게 옵션을 엽니다.
+        allowRetry: !isHttpError || !is429,
+      });
+
+      if (action === "retry") {
+        // 현재 config 그대로 다시 시도합니다.
+        continue;
+      }
+
+      if (action === "replaceApiKey") {
+        const apiKey = await promptApiKey(currentConfig.provider);
+        saveApiKey(currentConfig.provider, apiKey);
+
+        currentConfig = {
+          ...currentConfig,
+          apiKey,
+        };
+        continue;
+      }
+
+      if (action === "switchModel") {
+        // 기존 --model 대화형 설정 flow를 재사용합니다. 새 provider/model 설정이 저장되면
+        // 호출자는 기존 provider 설정 저장을 중단하고 이 결과를 그대로 반환합니다.
+        return {
+          switchedConfig: await setupModelInteractively(),
+          modelVersion: null,
+          config: currentConfig,
+        };
+      }
+
+      throw new Error("모델 설정이 오류 복구 단계에서 중단되었습니다.");
+    }
+  }
 }
 
 /**
@@ -336,6 +441,10 @@ export async function setupModelInteractively({
     provider: selectedProvider,
     authType: selectedAuthType,
   };
+  const handledExistingApiKey = await askToReplaceExistingApiCredentials(
+    selectedProvider,
+    selectedAuthType,
+  );
 
   // 외부 모델 목록 조회 확인
   // 사용자가 모델 목록 조회를 거부하면 에러 발생
@@ -347,13 +456,21 @@ export async function setupModelInteractively({
   }
 
   // 3. API Key 입력 (필요 시)
-  await ensureApiCredentials(selectedProvider, selectedAuthType);
+  await ensureApiCredentials(selectedProvider, selectedAuthType, {
+    promptForExistingKey: !handledExistingApiKey,
+  });
 
   // 4. 모델 버전 선택 (없을 경우)
   let selectedModelVersion = modelVersion;
   if (!selectedModelVersion) {
-    selectedModelVersion =
-      await resolveInteractiveModelVersion(modelListConfig);
+    const modelResolution =
+      await resolveInteractiveModelVersionWithRecovery(modelListConfig);
+
+    if (modelResolution.switchedConfig) {
+      return modelResolution.switchedConfig;
+    }
+
+    selectedModelVersion = modelResolution.modelVersion;
   }
 
   // 5. 최종 설정 병합 및 저장
