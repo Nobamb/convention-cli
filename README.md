@@ -155,7 +155,19 @@ convention --question
 
 # 짧은 옵션
 convention -q
+
+# AI Provider 및 모델 설정
+convention --model
+convention --model gemini api
+convention --model openaiCompatible api "gpt-compatible"
+convention --model localLLM none "qwen2.5:7b"
 ```
+
+### API Key 및 429 에러 복구
+
+API Key는 `config.json`이 아닌 `~/.config/convention/credentials.json`에 별도로 저장됩니다. 이미 API Key가 저장된 Provider에 대해 `--model` 설정을 다시 실행하면, 기존 키를 교체할지 먼저 확인합니다.
+
+`convention`, `--step`, 또는 `--batch` 실행 중 Gemini나 OpenAI 호환 API에서 HTTP 429(Rate Limit) 또는 할당량 초과 응답이 발생하면 터미널에서 다음 중 하나를 선택할 수 있습니다: 다른 API Key를 입력하고 재시도, 기존 모델 설정 흐름을 통해 Provider/모델을 변경하고 재시도, 혹은 Staging이나 커밋 없이 안전하게 중단.
 
 기본 설정 파일은 `~/.config/convention/config.json`에 저장합니다. 1차 MVP의 기본 언어는 `ko`, 기본 모드는 `step`, `confirmBeforeCommit` 값은 `true`입니다.
 
