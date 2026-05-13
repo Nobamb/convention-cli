@@ -227,6 +227,52 @@ test('S-1 direct gemini setup stores config without API key leakage', async () =
   }
 });
 
+test('S-3 direct gemini setup keeps existing API key when replacement is rejected', async () => {
+  const { store, modelCommand, cleanup } = await importModelCommandWithTempHome();
+
+  try {
+    store.saveCredentials({
+      gemini: {
+        authType: 'api',
+        apiKey: 'existing-secret-key',
+      },
+    });
+    prompts.inject([false]);
+
+    const nextConfig = await modelCommand.runModelSetup(
+      'gemini',
+      'api',
+      'gemini-3-flash-preview',
+    );
+
+    assert.equal(nextConfig.provider, 'gemini');
+    assert.equal(store.loadCredentials().gemini.apiKey, 'existing-secret-key');
+  } finally {
+    cleanup();
+  }
+});
+
+test('S-4 direct gemini setup replaces existing API key only after confirmation', async () => {
+  const { store, modelCommand, cleanup } = await importModelCommandWithTempHome();
+
+  try {
+    store.saveCredentials({
+      gemini: {
+        authType: 'api',
+        apiKey: 'old-secret-key',
+      },
+    });
+    prompts.inject([true, 'new-secret-key']);
+
+    await modelCommand.runModelSetup('gemini', 'api', 'gemini-3-flash-preview');
+
+    assert.equal(store.loadCredentials().gemini.apiKey, 'new-secret-key');
+    assert.equal(store.loadConfig().apiKey, undefined);
+  } finally {
+    cleanup();
+  }
+});
+
 test('S-2 empty direct modelVersion is rejected without config mutation', async () => {
   const { store, modelCommand, cleanup } = await importModelCommandWithTempHome();
 
