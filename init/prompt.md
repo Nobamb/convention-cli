@@ -278,6 +278,8 @@ test-A.md라는 파일을 한국어로 적어줘
 
 23-1. W 단계는 Push/Reset 안전 확인 Agent이므로 @work_process/mvp-2/W/research-W.md 내용에는 명령어 실행 전 confirm 필수 적용, 취소 시 안전 종료 처리 로직을 정리해줘. @work_process/mvp-2/W/test-W.md 내용에는 reset 등 위험 명령이 사용자 확인 없이 실행되지 않는지 확인하는 테스트 항목을 한국어로 정리해줘.
 
+23-2. 지금 model을 바꾸게 될 때, api를 한번만 입력하게 되면 다시 model을 바꾸려고 하면 api를 고정해서 사용해야 되는 상황이 오거든 예를 들어서 convention --model로 gemini api키를 입력해서 gemini-3.0-flash 버전을 사용하게 된다면 그 이후에는 --model을 입력하면 버전만 바꿀 수 있고 api는 바꿀 수 없는 형태야 그래서 만약에 convention --model을 입력해서 모델을 선택하게 된다면 버전만 바꿀 수 있는 것이 아닌 먼저 api 키를 바꿀 것인지도 미리 물어보게 수정해줘 그리고 convention에서도 status 429 오류로 중간에 동작이 끊기게 될 때, api를 사용하여 convention을 실행하였다면 다른 api 키를 입력할 것인지, 아니면 다른 모델들을 사용할 것인지나(예를 들어 gemini api를 사용하였다면 openai또는 localLLM을 사용할 것인지 여부) 중단할 것인지를 터미널로 물어보게 하면 좋겠어 다른 api 키를 사용하였다면 그 api로 계속 진행하는거고 다른 모델을 사용하기로 하였다면 그 모델을 사용하도록 하는거야 중단을 할 것이면 그대로 convention을 종료하도록 하면 되겠어, 해당 내용에 대해서 추가적으로 init/02_mvp-2.md, init/prd.md, README.md에 관련 내용들을 정리해줘
+
 ### Phase 6. 통합 검증
 
 24. gemini 3.0 flash 모델 agent 1개를 X 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 X 단계 참고해서 X단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 X폴더 만들면서 그 폴더 내에 test-X.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/X에 research-X.md 파일로 정리해줘
