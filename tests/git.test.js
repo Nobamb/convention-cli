@@ -13,6 +13,8 @@ import {
   getFileDiffs,
   getFullDiff,
   isGitRepository,
+  push,
+  resetLastCommit,
 } from '../src/core/git.js';
 
 const gitAvailable = (() => {
@@ -138,10 +140,12 @@ test('git core implementation avoids unsafe execution and logging patterns', () 
   assert.equal(source.includes('execSync'), false);
   assert.equal(/shell\s*:\s*true/.test(source), false);
   assert.equal(/console\./.test(source), false);
-  assert.equal(source.includes('reset'), false);
   assert.match(source, /\[["']add["'], ["']-A["']\]/);
   assert.match(source, /\[["']add["'], ["']--["'], file\]/);
   assert.match(source, /\[["']commit["'], ["']-m["'], message\]/);
+  assert.match(source, /\[["']push["']\]/);
+  assert.match(source, /\[["']reset["'], ["']HEAD~1["']\]/);
+  assert.equal(source.includes(['--', 'hard'].join('')), false);
   assert.match(source, /encoding: ["']utf8["']/);
 });
 
@@ -491,5 +495,40 @@ test('commit rejects empty messages and propagates git errors when nothing is st
     } finally {
       console.error = originalError;
     }
+  });
+});
+
+test('push uses safe error output when no remote is configured', { skip: skipWithoutGit }, async () => {
+  await withRepo(() => {
+    const originalError = console.error;
+    const errors = [];
+    console.error = (message) => {
+      errors.push(String(message));
+    };
+
+    try {
+      assert.throws(() => push(), /Failed to push/);
+    } finally {
+      console.error = originalError;
+    }
+
+    assert.equal(errors.some((message) => message.includes('Failed to push')), true);
+    assert.equal(errors.some((message) => message.includes('fatal:')), false);
+    assert.equal(errors.some((message) => message.includes('http')), false);
+  });
+});
+
+test('resetLastCommit uses mixed reset and keeps reverted commit changes in working tree', { skip: skipWithoutGit }, async () => {
+  await withRepo((repoDir) => {
+    writeFile(repoDir, 'README.md', 'second commit change\n');
+    addFile('README.md');
+    commit('chore: second commit');
+
+    assert.equal(getLastCommitMessage(repoDir), 'chore: second commit');
+
+    resetLastCommit();
+
+    assert.equal(getLastCommitMessage(repoDir), 'chore: initial commit');
+    assert.match(getStatusLine(repoDir, 'README.md'), /^ M README\.md/);
   });
 });
