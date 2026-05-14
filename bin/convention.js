@@ -7,7 +7,12 @@ import {
   runDefaultCommit,
   runStepCommit,
 } from "../src/commands/commit.js";
-import { runQuestionSetup, setLanguage, setMode } from "../src/commands/config.js";
+import {
+  runQuestionSetup,
+  setLanguage,
+  setMode,
+  setQuestion,
+} from "../src/commands/config.js";
 import { runModelSetup } from "../src/commands/model.js";
 import { runReset } from "../src/commands/reset.js";
 import { error as logError } from "../src/utils/logger.js";
@@ -51,8 +56,8 @@ program
     "커밋 메시지 생성 언어를 설정합니다. 사용 가능 값: ko, en, jp, cn",
   )
   .option(
-    "-q, --question",
-    "커밋 메시지 생성 후 커밋 여부를 물어볼지 설정합니다. true 또는 false를 선택합니다.",
+    "-q, --question [value]",
+    "커밋 메시지 생성 후 커밋 여부를 물어볼지 설정합니다. true 또는 false를 입력하거나, 값 없이 실행하면 대화형으로 선택합니다.",
   )
   .option(
     "--model [values...]",
@@ -130,9 +135,17 @@ async function main() {
       await runModelSetup(provider, authType, modelVersion);
     }
 
-    if (options.question) {
-      // 커밋 메시지 생성 후 커밋 여부를 물어볼지 대화형으로 설정합니다.
-      await runQuestionSetup();
+    if (options.question !== undefined) {
+      if (options.question === true) {
+        // 커밋 메시지 생성 후 커밋 여부를 물어볼지 대화형으로 설정합니다.
+        await runQuestionSetup();
+      } else if (options.question === "true" || options.question === "false") {
+        setQuestion(options.question === "true");
+      } else {
+        throw new Error(
+          "--question 값은 true 또는 false만 사용할 수 있습니다.",
+        );
+      }
     }
 
     if (options.setMode) {

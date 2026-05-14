@@ -49,35 +49,69 @@ export const setLanguage = (language) => {
 /**
  * 커밋 전 확인 질문 및 외부 전송 확인 여부를 설정합니다.
  *
- * @param {Object} options 설정 옵션
+ * @param {Object|boolean} options 설정 옵션 또는 기존 boolean 인자
  * @param {boolean} [options.confirmBeforeCommit] 커밋 전 확인 질문 여부
  * @param {string} [options.confirmExternalTransmission] 외부 전송 확인 여부
  */
-export const setQuestion = ({
-  confirmBeforeCommit,
-  confirmExternalTransmission,
-}) => {
-  const config = loadConfig();
-  const newConfig = { ...config };
+export const setQuestion = (options) => {
+  // 옵션이 boolean일 때 true이면 커밋 전 확인 질문을 사용함으로 설정합니다.
+  // false이면 커밋 전 확인 질문을 사용 안 함으로 설정합니다.
 
+  const normalizedOptions =
+    typeof options === "boolean"
+      ? { confirmBeforeCommit: options }
+      : options && !Array.isArray(options) && typeof options === "object"
+        ? options
+        : null;
+
+  // 만약 설정할 옵션이 없다면 종료
+  if (!normalizedOptions) {
+    return;
+  }
+
+  // 객체 구조 분해
+  const { confirmBeforeCommit, confirmExternalTransmission } =
+    normalizedOptions;
+
+  // 기존 설정 불러오기
+  const config = loadConfig();
+
+  // 새로운 설정 객체 생성
+  const newConfig = { ...config };
+  // 변경 여부 확인
+  let changed = false;
+
+  // 커밋 전 확인 질문 설정 변경
   if (typeof confirmBeforeCommit === "boolean") {
     newConfig.confirmBeforeCommit = confirmBeforeCommit;
+    changed = true;
   }
 
-  if (
-    ["always", "once", "never"].includes(confirmExternalTransmission)
-  ) {
+  // 외부 AI 전송 확인 설정 변경
+  if (["always", "once", "never"].includes(confirmExternalTransmission)) {
     newConfig.confirmExternalTransmission = confirmExternalTransmission;
+    changed = true;
   }
 
+  // 바뀌지 않았다면 종료
+  if (!changed) {
+    return;
+  }
+
+  // 설정 저장
   saveConfig(newConfig);
 
+  // 설정 갱신 성공 메시지
   success("질문 관련 설정이 갱신되었습니다.");
+
+  // 커밋 전 확인 질문 설정
   if (typeof confirmBeforeCommit === "boolean") {
     info(
       `- 커밋 전 확인: ${confirmBeforeCommit ? "사용함" : "사용 안 함 (바로 커밋)"}`,
     );
   }
+
+  // 외부 AI 전송 확인 설정
   if (confirmExternalTransmission) {
     info(`- 외부 AI 전송 확인: ${confirmExternalTransmission}`);
   }

@@ -335,10 +335,11 @@ test('T-22 runQuestionSetup stores selected prompt value', async () => {
     ...DEFAULT_CONFIG,
     confirmBeforeCommit: true,
   });
-  prompts.inject([false]);
+  prompts.inject([false, 'always']);
 
   const nextConfig = await commands.runQuestionSetup();
 
   assert.equal(nextConfig.confirmBeforeCommit, false);
+  assert.equal(nextConfig.confirmExternalTransmission, 'always');
   assert.equal(store.loadConfig().confirmBeforeCommit, false);
 });
