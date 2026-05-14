@@ -293,3 +293,211 @@ test-A.md라는 파일을 한국어로 적어줘
 ## 3차 고도화 내용
 
 1. AGENTS.md, GEMINI.md, init/00_rule.md, ** init/03_advanced.md ** 의 내용들을 참고해서 init/prompt.md의 내용을 3차 고도화 내용의 1번 아래에서부터 작성해서, 2번부터 시작해서 B단계부터 AV단계까지 쭉 만들어줘 B~AV단계까지의 각 단계는 gpt 5.5 midium 모델로 prompt.md의 각 단계를 하나씩 작성하도록 하고, 양식은 1차 MVP 내용에 있는 24번을 참고해서 2단계부터 작성하면 좋겠어 그리고 각 번호의 하위 번호(2번에는 2-1, 3번에는 3-1과 같이)에는 작성한 단계 내용과 관련해서 생성된 test, research 파일을 확인하면서 각 단계에 맞는 작업을 지시하는 내용을 담아서 작성했으면 해, 해당 하위 번호는 각 번호를 작성한 모델이 추가적으로 작성을 해주면 돼(예를 들어서 2번을 작성한 모델이 2-1에 해당하는 프롬프트를 작성해서 해당 test, research 파일을 확인해서 해당 단계에 해당하는 작업을 해달라는 식으로 지시하는 프롬프트를 작성해주면 돼) 그리고 prompt의 B~AV단계까지 작성할 프롬프트가 모두 작성이 완료되면 gpt 5.5 high 모델로 init/03_advanced.md의 내용을 기반으로 prompt.md의 3차 고도화 내용에 있는 전반적인 내용들을 분석해서 3차 고도화 내용에 부합하는 내용들인지 파악을 해보면 좋겠어
+
+### Phase 1. 사용자 검토 UX 고도화
+
+2. gpt-5.5 medium 모델 agent 1개를 B 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 B 단계 참고해서 B단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/B 폴더를 만들고 그 안에 test-B.md로 정리해줘. 그리고 현재 작업 상황에서 Config Versioning을 어떻게 구현하면 좋을지 @work_process/advanced/B/research-B.md 파일로 정리해줘.
+
+2-1. B 단계는 Config Versioning Agent이므로 @work_process/advanced/B/research-B.md와 @work_process/advanced/B/test-B.md를 확인한 뒤, configVersion 필드 추가, src/config/migration.js 작성, 기존 config 자동 migration, 누락 필드 기본값 보정, migration 실패 시 안전한 에러 출력까지 구현해줘. 테스트는 기존 1차/2차 config가 3차 schema로 보정되는지와 기존 설정값이 보존되는지를 중심으로 진행해줘.
+
+3. gpt-5.5 medium 모델 agent 1개를 C 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 C 단계 참고해서 C단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/C 폴더를 만들고 그 안에 test-C.md로 정리해줘. 그리고 Commit Preview 구현 계획을 @work_process/advanced/C/research-C.md 파일로 정리해줘.
+
+3-1. C 단계는 Commit Preview Agent이므로 @work_process/advanced/C/research-C.md와 @work_process/advanced/C/test-C.md를 기반으로 생성된 커밋 메시지, 변경 파일 요약, mode, provider 정보를 커밋 전에 출력하도록 구현해줘. step/batch 모두에서 preview가 동작해야 하며 diff 원문이나 secret은 출력하지 않도록 보안 규칙을 지켜줘.
+
+4. gpt-5.5 medium 모델 agent 1개를 D 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 D 단계 참고해서 D단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/D 폴더를 만들고 그 안에 test-D.md로 정리해줘. 그리고 Confirm UX 고도화 구현 계획을 @work_process/advanced/D/research-D.md 파일로 정리해줘.
+
+4-1. D 단계는 Confirm UX Agent이므로 @work_process/advanced/D/research-D.md와 @work_process/advanced/D/test-D.md를 확인하고, 기존 Yes/No confirm을 Commit, Regenerate, Edit manually, Cancel 선택 흐름으로 확장해줘. 선택 결과가 commit flow로 명확히 전달되도록 src/utils/ui.js와 src/commands/commit.js를 중심으로 구현해줘.
+
+5. gpt-5.5 medium 모델 agent 1개를 E 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 E 단계 참고해서 E단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/E 폴더를 만들고 그 안에 test-E.md로 정리해줘. 그리고 Regenerate 기능 구현 계획을 @work_process/advanced/E/research-E.md 파일로 정리해줘.
+
+5-1. E 단계는 Regenerate Agent이므로 @work_process/advanced/E/research-E.md와 @work_process/advanced/E/test-E.md를 기반으로 기존 diff를 유지한 채 이전 메시지와 다른 표현으로 AI 메시지를 재생성하는 흐름을 구현해줘. maxRegenerateCount 기본값은 3으로 두고, 재생성 후 다시 preview와 decision UI로 돌아오도록 작업해줘.
+
+6. gpt-5.5 medium 모델 agent 1개를 F 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 F 단계 참고해서 F단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/F 폴더를 만들고 그 안에 test-F.md로 정리해줘. 그리고 Manual Edit 기능 구현 계획을 @work_process/advanced/F/research-F.md 파일로 정리해줘.
+
+6-1. F 단계는 Manual Edit Agent이므로 @work_process/advanced/F/research-F.md와 @work_process/advanced/F/test-F.md를 확인하고, AI가 생성한 커밋 메시지를 기본값으로 보여준 뒤 사용자가 직접 수정할 수 있게 구현해줘. 빈 메시지는 거부하고, 수정된 메시지가 git commit에 전달되는지 테스트해줘.
+
+7. gpt-5.5 medium 모델 agent 1개를 G 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 G 단계 참고해서 G단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/G 폴더를 만들고 그 안에 test-G.md로 정리해줘. 그리고 Commit Decision Flow 통합 계획을 @work_process/advanced/G/research-G.md 파일로 정리해줘.
+
+7-1. G 단계는 Commit Decision Flow Agent이므로 @work_process/advanced/G/research-G.md와 @work_process/advanced/G/test-G.md를 기반으로 AI 메시지 생성, preview 출력, Commit/Regenerate/Edit/Cancel 선택, git add/commit 실행까지 하나의 공통 흐름으로 연결해줘. batch와 step이 같은 decision flow를 재사용하도록 정리해줘.
+
+### Phase 2. 대용량 diff 처리
+
+8. gpt-5.5 medium 모델 agent 1개를 H 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 H 단계 참고해서 H단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/H 폴더를 만들고 그 안에 test-H.md로 정리해줘. 그리고 Large Diff Detector 구현 계획을 @work_process/advanced/H/research-H.md 파일로 정리해줘.
+
+8-1. H 단계는 Large Diff Detector Agent이므로 @work_process/advanced/H/research-H.md와 @work_process/advanced/H/test-H.md를 확인하고, diff 문자 수, 파일 수, line count 기준으로 대용량 diff 여부를 판단하는 detectLargeDiff() 흐름을 구현해줘. 기준값은 config default에 두고 일반 AI 호출 대신 large diff flow로 전환할 수 있게 반환 구조를 설계해줘.
+
+9. gpt-5.5 medium 모델 agent 1개를 I 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 I 단계 참고해서 I단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/I 폴더를 만들고 그 안에 test-I.md로 정리해줘. 그리고 Diff Chunking 구현 계획을 @work_process/advanced/I/research-I.md 파일로 정리해줘.
+
+9-1. I 단계는 Diff Chunking Agent이므로 @work_process/advanced/I/research-I.md와 @work_process/advanced/I/test-I.md를 기반으로 파일 단위 chunk 생성, 큰 파일 diff의 line 기준 분할, chunk index와 file metadata 부여, 빈 chunk 제거를 구현해줘. 한글/공백 파일명과 대용량 diff에서도 안정적으로 동작하는지 확인해줘.
+
+10. gpt-5.5 medium 모델 agent 1개를 J 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 J 단계 참고해서 J단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/J 폴더를 만들고 그 안에 test-J.md로 정리해줘. 그리고 Chunk Summary 구현 계획을 @work_process/advanced/J/research-J.md 파일로 정리해줘.
+
+10-1. J 단계는 Chunk Summary Agent이므로 @work_process/advanced/J/research-J.md와 @work_process/advanced/J/test-J.md를 확인하고, chunk summary prompt 생성, chunk별 AI 호출, 요약 결과 저장, 실패 chunk 재시도 및 fallback 처리를 구현해줘. 커밋 메시지는 이 단계에서 생성하지 말고 변경 목적과 주요 내용 요약만 생성하도록 해줘.
+
+11. gpt-5.5 medium 모델 agent 1개를 K 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 K 단계 참고해서 K단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/K 폴더를 만들고 그 안에 test-K.md로 정리해줘. 그리고 Summary Merge 구현 계획을 @work_process/advanced/K/research-K.md 파일로 정리해줘.
+
+11-1. K 단계는 Summary Merge Agent이므로 @work_process/advanced/K/research-K.md와 @work_process/advanced/K/test-K.md를 기반으로 chunk summary 목록을 입력받아 중복을 제거하고 파일별/기능별 변경 의도를 병합하는 로직을 구현해줘. 최종 commit prompt에 넣을 수 있는 요약 문자열을 반환하도록 해줘.
+
+12. gpt-5.5 medium 모델 agent 1개를 L 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 L 단계 참고해서 L단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/L 폴더를 만들고 그 안에 test-L.md로 정리해줘. 그리고 Large Diff Commit Message 구현 계획을 @work_process/advanced/L/research-L.md 파일로 정리해줘.
+
+12-1. L 단계는 Large Diff Commit Message Agent이므로 @work_process/advanced/L/research-L.md와 @work_process/advanced/L/test-L.md를 확인하고, large diff 감지, chunk 요약, summary merge, summary 기반 commit message prompt 생성, AI 커밋 메시지 생성까지 연결해줘. 원본 대용량 diff를 로그에 출력하지 않는지 반드시 확인해줘.
+
+### Phase 3. 파일 변경 사항 자동 그룹핑
+
+13. gpt-5.5 medium 모델 agent 1개를 M 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 M 단계 참고해서 M단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/M 폴더를 만들고 그 안에 test-M.md로 정리해줘. 그리고 Changed File Classifier 구현 계획을 @work_process/advanced/M/research-M.md 파일로 정리해줘.
+
+13-1. M 단계는 Changed File Classifier Agent이므로 @work_process/advanced/M/research-M.md와 @work_process/advanced/M/test-M.md를 기반으로 변경 파일을 source, test, docs, config, style, dependency, generated 같은 유형으로 분류하는 classifyChangedFiles()를 구현해줘. 경로, 확장자, 특수 파일 규칙을 모두 반영해줘.
+
+14. gpt-5.5 medium 모델 agent 1개를 N 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 N 단계 참고해서 N단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/N 폴더를 만들고 그 안에 test-N.md로 정리해줘. 그리고 Diff Intent Analyzer 구현 계획을 @work_process/advanced/N/research-N.md 파일로 정리해줘.
+
+14-1. N 단계는 Diff Intent Analyzer Agent이므로 @work_process/advanced/N/research-N.md와 @work_process/advanced/N/test-N.md를 확인하고, 파일별 diff의 변경 의도를 분석해서 feat/fix/refactor/docs/test/chore 후보와 요약을 반환하는 구조를 구현해줘. AI 호출이 필요한 경우 provider routing을 사용하고, 외부 전송 보안 gate를 유지해줘.
+
+15. gpt-5.5 medium 모델 agent 1개를 O 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 O 단계 참고해서 O단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/O 폴더를 만들고 그 안에 test-O.md로 정리해줘. 그리고 File Grouping 구현 계획을 @work_process/advanced/O/research-O.md 파일로 정리해줘.
+
+15-1. O 단계는 File Grouping Agent이므로 @work_process/advanced/O/research-O.md와 @work_process/advanced/O/test-O.md를 기반으로 파일 유형과 intent를 조합해 관련 파일을 그룹으로 묶는 groupFilesByIntent() 흐름을 구현해줘. 너무 작은 그룹 병합, 대표 type 추정, 빈 그룹 방지를 포함해줘.
+
+16. gpt-5.5 medium 모델 agent 1개를 P 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 P 단계 참고해서 P단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/P 폴더를 만들고 그 안에 test-P.md로 정리해줘. 그리고 Grouping Preview 구현 계획을 @work_process/advanced/P/research-P.md 파일로 정리해줘.
+
+16-1. P 단계는 Grouping Preview Agent이므로 @work_process/advanced/P/research-P.md와 @work_process/advanced/P/test-P.md를 확인하고, AI 또는 rule 기반 그룹핑 결과를 사용자에게 보여주는 preview UI를 구현해줘. Yes, Edit manually, Use batch instead, Cancel 선택지를 제공하고 그룹 파일 목록은 diff 원문 없이 표시해줘.
+
+17. gpt-5.5 medium 모델 agent 1개를 Q 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 Q 단계 참고해서 Q단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/Q 폴더를 만들고 그 안에 test-Q.md로 정리해줘. 그리고 Grouped Commit Flow 구현 계획을 @work_process/advanced/Q/research-Q.md 파일로 정리해줘.
+
+17-1. Q 단계는 Grouped Commit Flow Agent이므로 @work_process/advanced/Q/research-Q.md와 @work_process/advanced/Q/test-Q.md를 기반으로 그룹별 파일 목록 확인, 그룹별 diff 생성, 그룹별 prompt/AI 메시지 생성, preview/confirm, git add, git commit 흐름을 구현해줘. 사용자 confirm 없이 여러 커밋이 자동 생성되지 않도록 안전 장치를 유지해줘.
+
+### Phase 4. 팀 컨벤션 템플릿
+
+18. gpt-5.5 medium 모델 agent 1개를 R 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 R 단계 참고해서 R단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/R 폴더를 만들고 그 안에 test-R.md로 정리해줘. 그리고 Template Schema 구현 계획을 @work_process/advanced/R/research-R.md 파일로 정리해줘.
+
+18-1. R 단계는 Template Schema Agent이므로 @work_process/advanced/R/research-R.md와 @work_process/advanced/R/test-R.md를 확인하고, src/templates/schema.js와 기본 템플릿 구조를 구현해줘. name, language, format, types, rules.maxLength, rules.requireScope, rules.allowEmoji 같은 필드를 명확히 정의해줘.
+
+19. gpt-5.5 medium 모델 agent 1개를 S 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 S 단계 참고해서 S단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/S 폴더를 만들고 그 안에 test-S.md로 정리해줘. 그리고 Template Load 구현 계획을 @work_process/advanced/S/research-S.md 파일로 정리해줘.
+
+19-1. S 단계는 Template Load Agent이므로 @work_process/advanced/S/research-S.md와 @work_process/advanced/S/test-S.md를 기반으로 프로젝트 루트 .convention/template.json, .conventionrc, 사용자 홈 template.json, 기본 템플릿 순서로 로드하는 loadTemplate()을 구현해줘. 경로 처리는 path.join()과 os.homedir() 기준을 지켜줘.
+
+20. gpt-5.5 medium 모델 agent 1개를 T 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 T 단계 참고해서 T단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/T 폴더를 만들고 그 안에 test-T.md로 정리해줘. 그리고 Template Validation 구현 계획을 @work_process/advanced/T/research-T.md 파일로 정리해줘.
+
+20-1. T 단계는 Template Validation Agent이므로 @work_process/advanced/T/research-T.md와 @work_process/advanced/T/test-T.md를 확인하고, 필수 필드, types 배열, format 문자열, language, maxLength를 검증하는 validateTemplate()을 구현해줘. 잘못된 템플릿은 CLI를 죽이지 않고 기본 템플릿으로 fallback하도록 해줘.
+
+21. gpt-5.5 medium 모델 agent 1개를 U 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 U 단계 참고해서 U단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/U 폴더를 만들고 그 안에 test-U.md로 정리해줘. 그리고 Template Apply 구현 계획을 @work_process/advanced/U/research-U.md 파일로 정리해줘.
+
+21-1. U 단계는 Template Apply Agent이므로 @work_process/advanced/U/research-U.md와 @work_process/advanced/U/test-U.md를 기반으로 커밋 prompt 생성 시 template의 허용 type, format, language, maxLength 규칙을 반영하도록 구현해줘. 기존 language 설정과 template language가 충돌할 때의 우선순위도 명확히 정리해줘.
+
+22. gpt-5.5 medium 모델 agent 1개를 V 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 V 단계 참고해서 V단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/V 폴더를 만들고 그 안에 test-V.md로 정리해줘. 그리고 Template Command 구현 계획을 @work_process/advanced/V/research-V.md 파일로 정리해줘.
+
+22-1. V 단계는 Template Command Agent이므로 @work_process/advanced/V/research-V.md와 @work_process/advanced/V/test-V.md를 확인하고, convention --template, --template init, --template show, --template validate 라우팅과 src/commands/template.js를 구현해줘. 설정 명령은 commit flow를 실행하지 않아야 해.
+
+### Phase 5. OAuth 인증
+
+23. gpt-5.5 medium 모델 agent 1개를 W 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 W 단계 참고해서 W단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/W 폴더를 만들고 그 안에 test-W.md로 정리해줘. 그리고 OAuth Architecture 구현 계획을 @work_process/advanced/W/research-W.md 파일로 정리해줘.
+
+23-1. W 단계는 OAuth Architecture Agent이므로 @work_process/advanced/W/research-W.md와 @work_process/advanced/W/test-W.md를 기반으로 src/auth/oauth.js, src/auth/oauthProviders.js의 공통 구조를 설계하고 authorization URL 생성, callback 처리, token 저장, refresh 구조를 분리해줘. OAuth token은 credentials 계층으로만 저장되게 해줘.
+
+24. gpt-5.5 medium 모델 agent 1개를 X 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 X 단계 참고해서 X단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/X 폴더를 만들고 그 안에 test-X.md로 정리해줘. 그리고 OAuth Provider Config 구현 계획을 @work_process/advanced/X/research-X.md 파일로 정리해줘.
+
+24-1. X 단계는 OAuth Provider Config Agent이므로 @work_process/advanced/X/research-X.md와 @work_process/advanced/X/test-X.md를 확인하고, provider별 authUrl, tokenUrl, scopes, client 설정을 src/auth/oauthProviders.js에서 분리 관리하도록 구현해줘. 지원하지 않는 provider는 mock fallback 없이 명확한 오류로 중단해줘.
+
+25. gpt-5.5 medium 모델 agent 1개를 Y 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 Y 단계 참고해서 Y단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/Y 폴더를 만들고 그 안에 test-Y.md로 정리해줘. 그리고 OAuth Local Callback 구현 계획을 @work_process/advanced/Y/research-Y.md 파일로 정리해줘.
+
+25-1. Y 단계는 OAuth Local Callback Agent이므로 @work_process/advanced/Y/research-Y.md와 @work_process/advanced/Y/test-Y.md를 기반으로 임시 localhost callback 서버, 랜덤 port, callback path 처리, authorization code 수신, timeout, 서버 종료 처리를 구현해줘. 브라우저 실행이 필요한 경우 사용자 승인/환경 제약을 고려하고 테스트에서는 mock server를 우선 사용해줘.
+
+26. gpt-5.5 medium 모델 agent 1개를 Z 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 Z 단계 참고해서 Z단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/Z 폴더를 만들고 그 안에 test-Z.md로 정리해줘. 그리고 OAuth PKCE State 구현 계획을 @work_process/advanced/Z/research-Z.md 파일로 정리해줘.
+
+26-1. Z 단계는 OAuth PKCE State Agent이므로 @work_process/advanced/Z/research-Z.md와 @work_process/advanced/Z/test-Z.md를 확인하고, code_verifier, code_challenge, state 생성과 callback state 검증을 구현해줘. state 검증 실패 시 token 요청을 차단하고 민감값을 로그에 출력하지 않도록 해줘.
+
+27. gpt-5.5 medium 모델 agent 1개를 AA 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AA 단계 참고해서 AA단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AA 폴더를 만들고 그 안에 test-AA.md로 정리해줘. 그리고 OAuth Token Store 구현 계획을 @work_process/advanced/AA/research-AA.md 파일로 정리해줘.
+
+27-1. AA 단계는 OAuth Token Store Agent이므로 @work_process/advanced/AA/research-AA.md와 @work_process/advanced/AA/test-AA.md를 기반으로 access token, refresh token, 만료 시간을 credentials.json에 provider별로 저장하도록 구현해줘. 파일 권한 제한, token 출력 금지, config.json과 분리 저장을 반드시 검증해줘.
+
+28. gpt-5.5 medium 모델 agent 1개를 AB 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AB 단계 참고해서 AB단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AB 폴더를 만들고 그 안에 test-AB.md로 정리해줘. 그리고 OAuth Refresh 구현 계획을 @work_process/advanced/AB/research-AB.md 파일로 정리해줘.
+
+28-1. AB 단계는 OAuth Refresh Agent이므로 @work_process/advanced/AB/research-AB.md와 @work_process/advanced/AB/test-AB.md를 확인하고, token 만료 여부 확인, refresh token 존재 확인, token refresh 요청, 새 token 저장, refresh 실패 시 재로그인 안내를 구현해줘. refresh 실패 메시지에 token 원문이 포함되지 않도록 해줘.
+
+29. gpt-5.5 medium 모델 agent 1개를 AC 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AC 단계 참고해서 AC단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AC 폴더를 만들고 그 안에 test-AC.md로 정리해줘. 그리고 OAuth Provider Integration 구현 계획을 @work_process/advanced/AC/research-AC.md 파일로 정리해줘.
+
+29-1. AC 단계는 OAuth Provider Integration Agent이므로 @work_process/advanced/AC/research-AC.md와 @work_process/advanced/AC/test-AC.md를 기반으로 authType이 oauth일 때 token 로드, Authorization header 구성, 만료 시 refresh 호출, 인증 실패 처리를 provider routing에 연결해줘. API Key 방식과 OAuth 방식이 서로 설정을 오염시키지 않도록 해줘.
+
+### Phase 6. PR 자동화
+
+30. gpt-5.5 medium 모델 agent 1개를 AD 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AD 단계 참고해서 AD단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AD 폴더를 만들고 그 안에 test-AD.md로 정리해줘. 그리고 PR Prompt 구현 계획을 @work_process/advanced/AD/research-AD.md 파일로 정리해줘.
+
+30-1. AD 단계는 PR Prompt Agent이므로 @work_process/advanced/AD/research-AD.md와 @work_process/advanced/AD/test-AD.md를 확인하고, 현재 브랜치명, base branch, commit log, diff summary, 변경 파일 목록을 기반으로 PR 제목/본문 생성용 prompt를 만드는 buildPrPrompt()를 구현해줘. secret scan과 diff 원문 출력 금지 정책을 재사용해줘.
+
+31. gpt-5.5 medium 모델 agent 1개를 AE 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AE 단계 참고해서 AE단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AE 폴더를 만들고 그 안에 test-AE.md로 정리해줘. 그리고 PR Title Generator 구현 계획을 @work_process/advanced/AE/research-AE.md 파일로 정리해줘.
+
+31-1. AE 단계는 PR Title Generator Agent이므로 @work_process/advanced/AE/research-AE.md와 @work_process/advanced/AE/test-AE.md를 기반으로 현재 변경사항 또는 commit history 기반 PR 제목을 생성하는 generatePrTitle()을 구현해줘. 제목은 Conventional Commits 스타일에 맞추고 빈 응답/과도한 길이/markdown 코드블록을 정리해줘.
+
+32. gpt-5.5 medium 모델 agent 1개를 AF 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AF 단계 참고해서 AF단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AF 폴더를 만들고 그 안에 test-AF.md로 정리해줘. 그리고 PR Body Generator 구현 계획을 @work_process/advanced/AF/research-AF.md 파일로 정리해줘.
+
+32-1. AF 단계는 PR Body Generator Agent이므로 @work_process/advanced/AF/research-AF.md와 @work_process/advanced/AF/test-AF.md를 확인하고, Summary, Changes, Test 섹션을 포함하는 markdown PR 본문 생성 흐름을 구현해줘. PR 본문에 secret이나 token이 포함되지 않도록 보안 scan 결과를 반영해줘.
+
+33. gpt-5.5 medium 모델 agent 1개를 AG 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AG 단계 참고해서 AG단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AG 폴더를 만들고 그 안에 test-AG.md로 정리해줘. 그리고 GitHub Remote Detector 구현 계획을 @work_process/advanced/AG/research-AG.md 파일로 정리해줘.
+
+33-1. AG 단계는 GitHub Remote Detector Agent이므로 @work_process/advanced/AG/research-AG.md와 @work_process/advanced/AG/test-AG.md를 기반으로 git remote -v 결과에서 GitHub owner/repo를 안전하게 추출하는 로직을 구현해줘. HTTPS/SSH remote 모두 처리하고 GitHub가 아니면 PR 생성 대신 문서 출력 흐름으로 넘겨줘.
+
+34. gpt-5.5 medium 모델 agent 1개를 AH 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AH 단계 참고해서 AH단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AH 폴더를 만들고 그 안에 test-AH.md로 정리해줘. 그리고 GitHub PR Integration 구현 계획을 @work_process/advanced/AH/research-AH.md 파일로 정리해줘.
+
+34-1. AH 단계는 GitHub PR Integration Agent이므로 @work_process/advanced/AH/research-AH.md와 @work_process/advanced/AH/test-AH.md를 확인하고, 우선 PR 제목/본문 출력, gh CLI 설치 여부 확인, 사용자 동의 시 gh pr create 실행 흐름을 구현해줘. 명령 실행은 인자 배열 방식으로 하고 인증 정보나 remote token을 출력하지 않도록 해줘.
+
+35. gpt-5.5 medium 모델 agent 1개를 AI 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AI 단계 참고해서 AI단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AI 폴더를 만들고 그 안에 test-AI.md로 정리해줘. 그리고 PR Preview 구현 계획을 @work_process/advanced/AI/research-AI.md 파일로 정리해줘.
+
+35-1. AI 단계는 PR Preview Agent이므로 @work_process/advanced/AI/research-AI.md와 @work_process/advanced/AI/test-AI.md를 기반으로 생성된 PR 제목과 본문을 보여주고 Create PR, Edit manually, Print only, Cancel 선택지를 제공해줘. Create PR은 사용자 확인 또는 --yes 정책이 있을 때만 실행되도록 해줘.
+
+### Phase 7. npm 업데이트 알림
+
+36. gpt-5.5 medium 모델 agent 1개를 AJ 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AJ 단계 참고해서 AJ단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AJ 폴더를 만들고 그 안에 test-AJ.md로 정리해줘. 그리고 Package Version 구현 계획을 @work_process/advanced/AJ/research-AJ.md 파일로 정리해줘.
+
+36-1. AJ 단계는 Package Version Agent이므로 @work_process/advanced/AJ/research-AJ.md와 @work_process/advanced/AJ/test-AJ.md를 확인하고, package.json의 version을 읽는 getCurrentVersion()과 convention --version 라우팅을 구현해줘. package.json 경로 탐색은 안전하게 처리하고 commit flow와 분리해줘.
+
+37. gpt-5.5 medium 모델 agent 1개를 AK 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AK 단계 참고해서 AK단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AK 폴더를 만들고 그 안에 test-AK.md로 정리해줘. 그리고 npm Registry Check 구현 계획을 @work_process/advanced/AK/research-AK.md 파일로 정리해줘.
+
+37-1. AK 단계는 npm Registry Check Agent이므로 @work_process/advanced/AK/research-AK.md와 @work_process/advanced/AK/test-AK.md를 기반으로 npm registry API에서 latest version을 확인하고 현재 version과 비교하는 checkLatestVersion()을 구현해줘. 네트워크 실패는 기능 실패로 처리하지 말고 조용히 무시하며, unit test에서는 네트워크를 mock 처리해줘.
+
+38. gpt-5.5 medium 모델 agent 1개를 AL 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AL 단계 참고해서 AL단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AL 폴더를 만들고 그 안에 test-AL.md로 정리해줘. 그리고 Update Notification 구현 계획을 @work_process/advanced/AL/research-AL.md 파일로 정리해줘.
+
+38-1. AL 단계는 Update Notification Agent이므로 @work_process/advanced/AL/research-AL.md와 @work_process/advanced/AL/test-AL.md를 확인하고, 새 버전이 있을 때 현재 버전, 최신 버전, 업데이트 명령을 사용자 작업을 방해하지 않는 방식으로 안내하도록 구현해줘. npm publish나 자동 업데이트 실행은 하지 마.
+
+39. gpt-5.5 medium 모델 agent 1개를 AM 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AM 단계 참고해서 AM단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AM 폴더를 만들고 그 안에 test-AM.md로 정리해줘. 그리고 Update Policy 구현 계획을 @work_process/advanced/AM/research-AM.md 파일로 정리해줘.
+
+39-1. AM 단계는 Update Policy Agent이므로 @work_process/advanced/AM/research-AM.md와 @work_process/advanced/AM/test-AM.md를 기반으로 updateCheck와 lastUpdateCheckAt 설정을 추가하고 하루 1회 이하로 registry check가 실행되게 구현해줘. updateCheck가 false이면 네트워크 호출이 발생하지 않아야 해.
+
+### Phase 8. GitHub Actions / CI 연동
+
+40. gpt-5.5 medium 모델 agent 1개를 AN 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AN 단계 참고해서 AN단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AN 폴더를 만들고 그 안에 test-AN.md로 정리해줘. 그리고 CI Mode 구현 계획을 @work_process/advanced/AN/research-AN.md 파일로 정리해줘.
+
+40-1. AN 단계는 CI Mode Agent이므로 @work_process/advanced/AN/research-AN.md와 @work_process/advanced/AN/test-AN.md를 확인하고, CI=true 또는 GITHUB_ACTIONS=true 환경에서 CI mode를 감지하는 isCI(), isGitHubActions()를 구현해줘. CI 환경에서는 interactive prompt가 자동 비활성화되도록 commit/pr flow와 연결해줘.
+
+41. gpt-5.5 medium 모델 agent 1개를 AO 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AO 단계 참고해서 AO단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AO 폴더를 만들고 그 안에 test-AO.md로 정리해줘. 그리고 Non-interactive Mode 구현 계획을 @work_process/advanced/AO/research-AO.md 파일로 정리해줘.
+
+41-1. AO 단계는 Non-interactive Mode Agent이므로 @work_process/advanced/AO/research-AO.md와 @work_process/advanced/AO/test-AO.md를 기반으로 --yes, --no-interactive 옵션을 구현하고 prompt 호출 없이 실행되거나 필요한 값이 없으면 명확한 에러로 실패하게 해줘. 로컬에서 --yes 사용 시에도 confirmBeforeCommit 정책과 보안 gate가 무시되지 않게 해줘.
+
+42. gpt-5.5 medium 모델 agent 1개를 AP 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AP 단계 참고해서 AP단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AP 폴더를 만들고 그 안에 test-AP.md로 정리해줘. 그리고 GitHub Actions Output 구현 계획을 @work_process/advanced/AP/research-AP.md 파일로 정리해줘.
+
+42-1. AP 단계는 GitHub Actions Output Agent이므로 @work_process/advanced/AP/research-AP.md와 @work_process/advanced/AP/test-AP.md를 확인하고, GitHub Actions에서 사용할 수 있는 commit_message, pr_title, pr_body output을 생성하는 유틸을 구현해줘. multiline output 처리와 secret masking 주의사항을 반영해줘.
+
+43. gpt-5.5 medium 모델 agent 1개를 AQ 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AQ 단계 참고해서 AQ단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AQ 폴더를 만들고 그 안에 test-AQ.md로 정리해줘. 그리고 Workflow Example 문서화 계획을 @work_process/advanced/AQ/research-AQ.md 파일로 정리해줘.
+
+43-1. AQ 단계는 Workflow Example Agent이므로 @work_process/advanced/AQ/research-AQ.md와 @work_process/advanced/AQ/test-AQ.md를 기반으로 docs/github-actions.md와 README.md에 GitHub Actions 사용 예시를 추가해줘. 예시는 --pr --print-only --no-interactive 같은 안전한 흐름을 중심으로 작성하고 secret 노출 주의사항을 포함해줘.
+
+44. gpt-5.5 medium 모델 agent 1개를 AR 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AR 단계 참고해서 AR단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AR 폴더를 만들고 그 안에 test-AR.md로 정리해줘. 그리고 CI Security 구현 계획을 @work_process/advanced/AR/research-AR.md 파일로 정리해줘.
+
+44-1. AR 단계는 CI Security Agent이므로 @work_process/advanced/AR/research-AR.md와 @work_process/advanced/AR/test-AR.md를 확인하고, CI 로그에 token/API Key가 출력되지 않도록 logger redaction, auth 계층 마스킹, 환경변수 기반 API Key 지원 검토, PR from fork 주의 안내를 구현 또는 문서화해줘.
+
+### Phase 9. 통합 검증
+
+45. gpt-5.5 medium 모델 agent 1개를 AS 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AS 단계 참고해서 AS단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AS 폴더를 만들고 그 안에 test-AS.md로 정리해줘. 그리고 3차 통합 테스트 계획을 @work_process/advanced/AS/research-AS.md 파일로 정리해줘.
+
+45-1. AS 단계는 3차 통합 테스트 Agent이므로 @work_process/advanced/AS/research-AS.md와 @work_process/advanced/AS/test-AS.md를 기반으로 preview, regenerate, manual edit, large diff, grouping, template, OAuth mock, PR 생성, update check, CI mode가 기존 commit flow와 함께 정상 동작하는지 통합 검증해줘.
+
+46. gpt-5.5 medium 모델 agent 1개를 AT 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AT 단계 참고해서 AT단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AT 폴더를 만들고 그 안에 test-AT.md로 정리해줘. 그리고 Regression Test 계획을 @work_process/advanced/AT/research-AT.md 파일로 정리해줘.
+
+46-1. AT 단계는 Regression Test Agent이므로 @work_process/advanced/AT/research-AT.md와 @work_process/advanced/AT/test-AT.md를 확인하고, convention, --step, --batch, --set-mode, --language, --model, localLLM, API Key Provider, --push, --reset이 3차 변경 이후에도 이전과 동일하게 동작하는지 검증해줘.
+
+47. gpt-5.5 medium 모델 agent 1개를 AU 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AU 단계 참고해서 AU단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AU 폴더를 만들고 그 안에 test-AU.md로 정리해줘. 그리고 Security Review 계획을 @work_process/advanced/AU/research-AU.md 파일로 정리해줘.
+
+47-1. AU 단계는 Security Review Agent이므로 @work_process/advanced/AU/research-AU.md와 @work_process/advanced/AU/test-AU.md를 기반으로 OAuth state/PKCE, token 로그 출력 여부, credentials 저장 위치, diff 외부 전송 확인, large diff chunk 로그 출력, PR body secret 포함 가능성, CI secret 노출, reset/push confirm 정책을 검토하고 필요한 수정까지 진행해줘.
+
+48. gpt-5.5 medium 모델 agent 1개를 AV 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AV 단계 참고해서 AV단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AV 폴더를 만들고 그 안에 test-AV.md로 정리해줘. 그리고 Documentation Update 계획을 @work_process/advanced/AV/research-AV.md 파일로 정리해줘.
+
+48-1. AV 단계는 Documentation Update Agent이므로 @work_process/advanced/AV/research-AV.md와 @work_process/advanced/AV/test-AV.md를 확인하고, README.md, docs/model.md, docs/oauth.md, docs/templates.md, docs/pr.md, docs/github-actions.md에 3차 고도화 기능 사용법을 반영해줘. preview/regenerate/edit, large diff, grouping, template, OAuth, PR, GitHub Actions 내용을 사용자가 문서만 보고 실행할 수 있게 정리해줘.
+
+49. gpt-5.5 high 모델 agent 1개를 배정해서, prompt.md의 3차 고도화 내용 2번부터 48번까지 작성된 B~AV 단계 프롬프트와 각 하위 번호가 init/03_advanced.md의 3차 고도화 범위에 부합하는지 최종 검토해줘. 누락된 단계, 잘못된 파일 경로, test/research 파일 지시 누락, 보안 규칙 위반 가능성, 1차·2차 MVP 회귀를 깨뜨릴 수 있는 지시가 있는지 확인하고 문제가 있으면 prompt.md에 수정안을 반영해줘.
