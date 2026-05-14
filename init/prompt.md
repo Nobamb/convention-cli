@@ -284,6 +284,6 @@ test-A.md라는 파일을 한국어로 적어줘
 
 24. gemini 3.0 flash 모델 agent 1개를 X 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 X 단계 참고해서 X단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 X폴더 만들면서 그 폴더 내에 test-X.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/X에 research-X.md 파일로 정리해줘
 
-24-1. X 단계는 2차 MVP 통합 테스트 Agent이므로 @work_process/mvp-2/X/research-X.md 내용에는 1차 MVP 회귀 테스트, --model 명령 검증, API Key 저장, Provider 라우팅, push/reset 통합 테스트 계획을 정리해줘. @work_process/mvp-2/X/test-X.md 내용에는 1차/2차 MVP의 모든 기능이 정상 동작하는지 검증하는 테스트 항목을 한국어로 정리해줘.
+24-1. X 단계는 2차 MVP 통합 테스트 Agent이므로 @work_process/mvp-2/X/research-X.md 내용에는 1차 MVP 회귀 테스트, --model 명령 검증, API Key 저장, Provider 라우팅, push/reset 통합 테스트 외에도 ① 신규 생성 파일(untracked) 자동 스테이징, ② --question (-q) 플래그를 통한 커밋 확인 제어 동작, ③ dangerous1.md 기반 보안 조치 적용 여부 검증, ④ --model 재입력 시 API 키 변경 여부 확인 및 429 에러 발생 시 fallback(대체 모델 선택/중단) 로직에 대한 통합 테스트 계획을 정리해줘. @work_process/mvp-2/X/test-X.md 내용에는 1차/2차 MVP의 모든 기능이 정상 동작하는지 검증하는 테스트 항목을 한국어로 정리해줘.
 
-25. gemini 3.1 pro 모델 agent 1개를 배정해서, prompt의 B~X단계까지 작성된 프롬프트가 모두 작성이 완료된 이후에, init/02_mvp-2.md의 내용을 기반으로 prompt.md의 2차 MVP 내용에 있는 전반적인 내용들을 분석해서 2차 MVP 핵심 목표에 부합하는 내용들인지 최종적으로 파악하고 점검해줘.
+25. gemini 3.1 pro 모델 agent 1개를 배정해서, prompt의 B~X단계까지 작성된 프롬프트가 모두 작성이 완료된 이후에, init/02_mvp-2.md 뿐만 아니라 추가로 업데이트된 init/prd.md, README.md의 내용을 기반으로 prompt.md의 2차 MVP 내용에 있는 전반적인 내용들을 분석해서 2차 MVP 핵심 목표(신규 파일 스테이징, --question 설정, 429 에러 fallback, 보안 조치 등)에 부합하는 내용들인지 최종적으로 파악하고 점검해줘.
