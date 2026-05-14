@@ -78,62 +78,99 @@ const options = program.opts();
 /**
  * 옵션 우선순위에 따라 command 함수를 실행합니다.
  *
- * 1. --model 옵션 처리: 최우선순위로 처리하며, 설정을 마친 후 commit flow를 타지 않고 종료합니다.
- * 2. runDefaultCommit: 옵션이 없을 경우 config.mode에 따라 동작하도록 마지막에 호출합니다.
+ * 1. 설정 옵션(--model, --question, --set-mode, --language)과 실행 옵션(--step, --batch, --reset, --push) 분류
+ * 2. 혼합 사용 및 배타적 옵션 중복 시 에러 처리
+ * 3. 설정 옵션이 있을 경우 모두 순차적으로 적용 후 종료
+ * 4. 실행 옵션에 따라 commit flow 시작
  */
 async function main() {
-  if (options.model) {
-    // 가변 인자 배열을 분해하여 runModelSetup에 전달합니다.
-    // options.model이 배열이 아닐 경우 빈 배열을 반환합니다.
-    const [provider, authType, modelVersion] = Array.isArray(options.model)
-      ? options.model
-      : [];
-    // 모델 설정을 저장합니다. 설정을 저장한 후 커밋 flow로 가지 않고 종료합니다.
-    await runModelSetup(provider, authType, modelVersion);
+  // 설정 옵션 명시 여부
+  const hasConfigOption =
+    options.model !== undefined ||
+    options.question !== undefined ||
+    options.setMode !== undefined ||
+    options.language !== undefined;
+
+  // 실행 옵션 명시 여부
+  const hasExecutionOption =
+    options.step !== undefined ||
+    options.batch !== undefined ||
+    options.reset !== undefined ||
+    options.push !== undefined;
+
+  // 1. 설정 옵션과 실행 옵션 혼합 사용 시 에러 발생
+  if (hasConfigOption && hasExecutionOption) {
+    throw new Error(
+      "설정 옵션(--set-mode, --language, --question, --model)과 커밋 실행 옵션(--step, --batch, --reset, --push)은 함께 사용할 수 없습니다. 의도를 명확히 하여 한 종류의 명령어만 입력해 주세요."
+    );
+  }
+
+  // 2. 상호 배타적 실행 옵션 중복 입력 시 에러 발생
+  if (options.step && options.batch) {
+    throw new Error(
+      "상호 배타적인 옵션 조합입니다: --step과 --batch는 함께 사용할 수 없습니다."
+    );
+  }
+
+  if (options.reset && (options.step || options.batch || options.push)) {
+    throw new Error(
+      "상호 배타적인 옵션 조합입니다: --reset은 커밋 생성 옵션(--step, --batch, --push)과 함께 사용할 수 없습니다."
+    );
+  }
+
+  // 3. 다중 설정 옵션 처리
+  if (hasConfigOption) {
+    // 설정 옵션이 주어졌다면 모든 설정 옵션을 순차적으로 적용합니다.
+    if (options.model) {
+      // 가변 인자 배열을 분해하여 runModelSetup에 전달합니다.
+      const [provider, authType, modelVersion] = Array.isArray(options.model)
+        ? options.model
+        : [];
+      // 모델 설정을 대화형 또는 직접 지정 방식으로 저장합니다.
+      await runModelSetup(provider, authType, modelVersion);
+    }
+
+    if (options.question) {
+      // 커밋 메시지 생성 후 커밋 여부를 물어볼지 대화형으로 설정합니다.
+      await runQuestionSetup();
+    }
+
+    if (options.setMode) {
+      // 기본 실행 모드(step, batch)를 설정합니다.
+      setMode(options.setMode);
+    }
+
+    if (options.language) {
+      // 커밋 메시지 생성 언어(ko, en, jp, cn)를 설정합니다.
+      setLanguage(options.language);
+    }
+
+    // 설정을 마친 후 commit flow를 타지 않고 프로그램을 종료합니다.
     return;
   }
 
-  // 기본 실행 모드 변경
-  if (options.question) {
-    await runQuestionSetup();
-    return;
-  }
-
-  if (options.setMode) {
-    // 기본 실행 모드를 설정합니다.
-    setMode(options.setMode);
-    return;
-  }
-
-  // 기본 커밋 메시지 생성 언어 변경
-  if (options.language) {
-    // 커밋 메시지 생성 언어를 설정합니다.
-    setLanguage(options.language);
-    return;
-  }
-
-  // --reset은 commit/push 흐름과 완전히 분리합니다.
-  // 사용자가 --reset --push처럼 함께 입력하더라도 push나 새 commit을 실행하지 않고 reset flow만 수행합니다.
+  // 4. 실행 로직 처리
+  // --reset은 커밋 취소 작업이므로, commit/push 흐름과 완전히 분리되어 먼저 처리됩니다.
   if (options.reset) {
     await runReset();
     return;
   }
 
-  // step 모드로 커밋
+  // step 모드로 커밋 실행
   if (options.step) {
-    // step 모드로 커밋을 진행합니다.
+    // 변경 파일을 하나씩 개별 커밋합니다.
     await runStepCommit({ push: options.push });
     return;
   }
 
-  // batch 모드로 커밋
+  // batch 모드로 커밋 실행
   if (options.batch) {
-    // batch 모드로 커밋을 진행합니다.
+    // 전체 변경 파일을 하나의 통합 커밋으로 만듭니다.
     await runBatchCommit({ push: options.push });
     return;
   }
 
-  // 저장된 설정(config.mode)에 따라 commit flow를 시작합니다.
+  // 지정된 옵션이 없으면 저장된 설정(config.mode)에 따라 기본 commit flow를 시작합니다.
   await runDefaultCommit({ push: options.push });
 }
 
