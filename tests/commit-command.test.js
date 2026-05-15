@@ -28,6 +28,10 @@ const gitAvailable = (() => {
 
 const skipWithoutGit = gitAvailable ? false : 'git is not available in this environment';
 
+function clearPromptInjections() {
+  prompts._injected = [];
+}
+
 before(async () => {
   tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'convention-cli-command-home-'));
   previousHome = process.env.HOME;
@@ -44,12 +48,13 @@ beforeEach(() => {
   if (store && fs.existsSync(store.CONFIG_DIR)) {
     fs.rmSync(store.CONFIG_DIR, { recursive: true, force: true });
   }
-  prompts.inject([]);
+  clearPromptInjections();
 });
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
   console.warn = originalConsoleWarn;
+  clearPromptInjections();
 });
 
 after(() => {
@@ -174,6 +179,7 @@ test('runBatchCommit creates one commit for committable changed files', { skip: 
     writeFile(repoDir, 'README.md', 'batch readme change\n');
     writeFile(repoDir, 'docs/new-guide.md', 'new guide content\n');
     writeFile(repoDir, '.env', 'TOKEN=should-not-commit\n');
+    prompts.inject(['commit']);
 
     await commands.runBatchCommit();
 
@@ -194,6 +200,7 @@ test('runStepCommit creates one commit per committable file', { skip: skipWithou
     writeFile(repoDir, 'README.md', 'step readme change\n');
     writeFile(repoDir, 'src/app.js', 'console.log("changed");\n');
     writeFile(repoDir, 'docs/new-step-guide.md', 'new step guide\n');
+    prompts.inject(['commit', 'commit', 'commit']);
 
     await commands.runStepCommit();
 
@@ -257,7 +264,7 @@ test('runBatchCommit keeps local commit but skips push when push confirmation is
       confirmBeforeCommit: false,
     });
     writeFile(repoDir, 'README.md', 'batch push rejected change\n');
-    prompts.inject([false]);
+    prompts.inject(['commit', false]);
 
     await commands.runBatchCommit({ push: true });
 
@@ -274,6 +281,7 @@ test('runDefaultCommit routes batch mode to batch flow', { skip: skipWithoutGit 
     saveRuntimeConfig({ mode: 'batch' });
     writeFile(repoDir, 'README.md', 'default batch change\n');
     writeFile(repoDir, 'src/app.js', 'console.log("default batch");\n');
+    prompts.inject(['commit']);
 
     await commands.runDefaultCommit();
 
@@ -289,6 +297,7 @@ test('runDefaultCommit falls back to step flow for invalid mode', { skip: skipWi
     saveRuntimeConfig({ mode: 'fast' });
     writeFile(repoDir, 'README.md', 'invalid mode readme change\n');
     writeFile(repoDir, 'src/app.js', 'console.log("invalid mode");\n');
+    prompts.inject(['commit', 'commit']);
 
     await commands.runDefaultCommit();
 
@@ -445,6 +454,7 @@ test('runBatchCommit allows localLLM localhost without external AI transmission 
       confirmBeforeCommit: false,
     });
     writeFile(repoDir, 'README.md', 'local localllm allowed change\n');
+    prompts.inject(['commit']);
 
     await commands.runBatchCommit();
 
@@ -484,7 +494,7 @@ test('runBatchCommit sends masked diff to Gemini and does not log raw secret', {
       };
     };
 
-    prompts.inject([true]);
+    prompts.inject([true, 'commit']);
     saveRuntimeConfig({
       mode: 'batch',
       provider: 'gemini',
@@ -528,7 +538,7 @@ test('runBatchCommit sends masked diff to OpenAI-compatible provider and does no
       };
     };
 
-    prompts.inject([true]);
+    prompts.inject([true, 'commit']);
     saveRuntimeConfig({
       mode: 'batch',
       provider: 'openaiCompatible',
@@ -617,7 +627,7 @@ test('runBatchCommit retries Gemini 429 with a replacement API key before commit
       };
     };
 
-    prompts.inject([true, 'replaceApiKey', 'new-key', true]);
+    prompts.inject([true, 'replaceApiKey', 'new-key', true, 'commit']);
     saveRuntimeConfig({
       mode: 'batch',
       provider: 'gemini',
@@ -673,7 +683,7 @@ test('runBatchCommit can switch from exhausted Gemini to localLLM and retry safe
       };
     };
 
-    prompts.inject([true, 'switchModel', 'localLLM', 'test-local-model']);
+    prompts.inject([true, 'switchModel', 'localLLM', 'test-local-model', 'commit']);
     saveRuntimeConfig({
       mode: 'batch',
       provider: 'gemini',
