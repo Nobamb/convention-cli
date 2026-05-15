@@ -5,6 +5,11 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { DEFAULT_CONFIG } from '../src/config/defaults.js';
+import {
+  CURRENT_CONFIG_VERSION,
+  getConfigVersion,
+  migrateConfig,
+} from '../src/config/migration.js';
 
 async function importStoreWithTempHome() {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'convention-cli-home-'));
@@ -115,6 +120,156 @@ test('loadConfig keeps DEFAULT_CONFIG fields after saving partial config', async
     assert.equal(loadedConfig.modelVersion, DEFAULT_CONFIG.modelVersion);
     assert.equal(loadedConfig.baseURL, DEFAULT_CONFIG.baseURL);
     assert.equal(loadedConfig.confirmBeforeCommit, DEFAULT_CONFIG.confirmBeforeCommit);
+  } finally {
+    cleanup();
+  }
+});
+
+test('migrateConfig upgrades MVP config and preserves existing values', () => {
+  const legacyConfig = {
+    mode: 'batch',
+    language: 'en',
+    provider: 'localLLM',
+    authType: 'none',
+    modelVersion: 'qwen2.5:7b',
+    baseURL: 'http://localhost:11434/v1',
+  };
+
+  const migrated = migrateConfig(legacyConfig);
+
+  assert.equal(migrated.configVersion, CURRENT_CONFIG_VERSION);
+  assert.equal(migrated.mode, legacyConfig.mode);
+  assert.equal(migrated.language, legacyConfig.language);
+  assert.equal(migrated.provider, legacyConfig.provider);
+  assert.equal(migrated.authType, legacyConfig.authType);
+  assert.equal(migrated.modelVersion, legacyConfig.modelVersion);
+  assert.equal(migrated.baseURL, legacyConfig.baseURL);
+  assert.equal(migrated.previewBeforeCommit, true);
+  assert.equal(migrated.maxRegenerateCount, 3);
+  assert.equal(migrated.template, null);
+});
+
+test('migrateConfig repairs missing fields and deep merges default objects', () => {
+  const migrated = migrateConfig({
+    configVersion: 2,
+    language: 'jp',
+    largeDiffThreshold: {
+      maxFiles: 10,
+    },
+  });
+
+  assert.equal(migrated.configVersion, CURRENT_CONFIG_VERSION);
+  assert.equal(migrated.language, 'jp');
+  assert.equal(migrated.mode, DEFAULT_CONFIG.mode);
+  assert.deepEqual(migrated.largeDiffThreshold, {
+    ...DEFAULT_CONFIG.largeDiffThreshold,
+    maxFiles: 10,
+  });
+});
+
+test('migrateConfig rejects future config versions without downgrading', () => {
+  assert.throws(
+    () => migrateConfig({ configVersion: CURRENT_CONFIG_VERSION + 1 }),
+    /Unsupported config version/,
+  );
+});
+
+test('getConfigVersion treats missing version as legacy config', () => {
+  assert.equal(getConfigVersion({ mode: 'step' }), 0);
+});
+
+test('migrateConfig does not carry credential-like keys into config', () => {
+  const migrated = migrateConfig({
+    provider: 'gemini',
+    apiKey: 'secret-api-key',
+    nested: {
+      token: 'secret-token',
+      safeValue: 'kept',
+    },
+  });
+
+  assert.equal(migrated.provider, 'gemini');
+  assert.equal('apiKey' in migrated, false);
+  assert.deepEqual(migrated.nested, {
+    safeValue: 'kept',
+  });
+});
+
+test('loadConfig migrates legacy config files to current schema', async () => {
+  const { store, cleanup } = await importStoreWithTempHome();
+
+  try {
+    store.ensureConfigDir();
+    fs.writeFileSync(
+      store.CONFIG_FILE_PATH,
+      JSON.stringify({
+        mode: 'batch',
+        language: 'cn',
+        provider: 'mock',
+      }),
+      'utf8',
+    );
+
+    const loadedConfig = store.loadConfig();
+
+    assert.equal(loadedConfig.configVersion, CURRENT_CONFIG_VERSION);
+    assert.equal(loadedConfig.mode, 'batch');
+    assert.equal(loadedConfig.language, 'cn');
+    assert.equal(loadedConfig.provider, 'mock');
+    assert.equal(loadedConfig.previewBeforeCommit, true);
+    assert.equal(loadedConfig.maxRegenerateCount, 3);
+  } finally {
+    cleanup();
+  }
+});
+
+test('loadConfig falls back safely for malformed JSON without printing contents', async () => {
+  const { store, cleanup } = await importStoreWithTempHome();
+  const originalStdoutWrite = process.stdout.write;
+  const originalStderrWrite = process.stderr.write;
+  let output = '';
+
+  try {
+    process.stdout.write = (chunk, ...args) => {
+      output += String(chunk);
+      return originalStdoutWrite.call(process.stdout, chunk, ...args);
+    };
+    process.stderr.write = (chunk, ...args) => {
+      output += String(chunk);
+      return originalStderrWrite.call(process.stderr, chunk, ...args);
+    };
+
+    store.ensureConfigDir();
+    fs.writeFileSync(
+      store.CONFIG_FILE_PATH,
+      '{"apiKey":"secret-from-broken-json",',
+      'utf8',
+    );
+
+    assert.deepEqual(store.loadConfig(), DEFAULT_CONFIG);
+    assert.equal(output.includes('secret-from-broken-json'), false);
+  } finally {
+    process.stdout.write = originalStdoutWrite;
+    process.stderr.write = originalStderrWrite;
+    cleanup();
+  }
+});
+
+test('loadConfig rejects future config versions with a generic error', async () => {
+  const { store, cleanup } = await importStoreWithTempHome();
+
+  try {
+    store.ensureConfigDir();
+    fs.writeFileSync(
+      store.CONFIG_FILE_PATH,
+      JSON.stringify({
+        configVersion: CURRENT_CONFIG_VERSION + 1,
+        mode: 'batch',
+      }),
+      'utf8',
+    );
+
+    assert.throws(() => store.loadConfig(), /Unsupported config version/);
   } finally {
     cleanup();
   }
