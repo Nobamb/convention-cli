@@ -2,7 +2,7 @@ import childProcess from "child_process";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { DEFAULT_CONFIG } from "./defaults.js";
+import { migrateConfig } from "./migration.js";
 
 // 사용자 홈 디렉터리 아래에 CLI 설정 파일을 저장할 전용 디렉터리 경로입니다.
 // OS별 경로 구분자 차이를 피하기 위해 os.homedir()와 path.join()으로 조합합니다.
@@ -25,7 +25,35 @@ export function ensureConfigDir() {
 // 저장 전 디렉터리를 먼저 보장하고, 사람이 읽기 쉬운 2칸 들여쓰기 JSON을 UTF-8로 기록합니다.
 export function saveConfig(config) {
   ensureConfigDir();
-  fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(config, null, 2), "utf8");
+
+  // 과거 테스트/사용자 수동 설정에서 config 객체에 apiKey가 들어오는 경우를 호환 처리합니다.
+  // config.json에는 secret을 저장하지 않고, provider가 명확할 때 credentials.json으로만 이전합니다.
+  if (
+    config &&
+    !Array.isArray(config) &&
+    typeof config === "object" &&
+    typeof config.provider === "string" &&
+    typeof config.apiKey === "string" &&
+    config.apiKey.trim().length > 0
+  ) {
+    // 기존 credentials를 유지하면서 현재 provider의 apiKey만 갱신합니다.
+    const credentials = loadCredentials();
+    saveCredentials({
+      ...credentials,
+      [config.provider]: {
+        ...(credentials[config.provider] ?? {}),
+        authType: "api",
+        apiKey: config.apiKey.trim(),
+      },
+    });
+  }
+
+  // 저장 직전에 migration을 적용해 config.json이 항상 최신 schema와 secret 제거 규칙을 따르게 합니다.
+  fs.writeFileSync(
+    CONFIG_FILE_PATH,
+    JSON.stringify(migrateConfig(config), null, 2),
+    "utf8",
+  );
 }
 
 /**
@@ -138,7 +166,8 @@ export function loadConfig() {
   try {
     // 아직 설정 파일이 생성되지 않은 첫 실행 상태에서는 기본 설정만으로도 CLI가 동작해야 합니다.
     if (!fs.existsSync(CONFIG_FILE_PATH)) {
-      return { ...DEFAULT_CONFIG };
+      // DEFAULT_CONFIG를 직접 반환하지 않고 migrateConfig()를 거쳐 schema 보정 규칙을 한곳으로 모읍니다.
+      return migrateConfig();
     }
 
     // 설정 파일은 한글 등 다국어 값을 포함할 수 있으므로 UTF-8 인코딩을 명시해서 읽습니다.
@@ -153,17 +182,20 @@ export function loadConfig() {
       Array.isArray(userConfig) ||
       typeof userConfig !== "object"
     ) {
-      return { ...DEFAULT_CONFIG };
+      // JSON은 맞지만 설정 객체가 아니면 사용자 파일을 신뢰하지 않고 기본 schema로 복구합니다.
+      return migrateConfig();
     }
 
-    // 저장된 사용자 설정을 우선 적용하되, 빠진 필드는 DEFAULT_CONFIG로 보완합니다.
-    return {
-      ...DEFAULT_CONFIG,
-      ...userConfig,
-    };
-  } catch {
+    // 저장된 사용자 설정을 현재 schema로 보정합니다.
+    return migrateConfig(userConfig);
+  } catch (error) {
+    // 미래 버전 config는 기본값 fallback으로 조용히 덮으면 사용자 설정 손실이 생길 수 있어 명확히 중단합니다.
+    if (error?.message === "Unsupported config version.") {
+      throw new Error("Unsupported config version.");
+    }
+
     // 깨진 JSON이나 읽기 오류가 있어도 파일 원문을 노출하지 않고 안전하게 기본값으로 복구합니다.
-    return { ...DEFAULT_CONFIG };
+    return migrateConfig();
   }
 }
 
