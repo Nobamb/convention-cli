@@ -1,6 +1,10 @@
-// 사용자 설정 파일이 아직 없을 때 CLI가 공통으로 사용하는 1차 MVP 기본 설정값입니다.
-// 이후 설정 저장/로드 로직은 이 객체를 기준으로 누락된 사용자 설정을 보완합니다.
+// 사용자 설정 파일이 아직 없을 때 CLI가 공통으로 사용하는 기본 설정값입니다.
+// 3차 고도화부터는 설정 항목이 계속 늘어나므로, 이 파일의 DEFAULT_CONFIG가 migration 기준 schema 역할도 합니다.
+export const CURRENT_CONFIG_VERSION = 3;
+
 export const DEFAULT_CONFIG = {
+  // 3차 고도화부터 설정 schema migration을 위해 현재 config 구조 버전을 기록합니다.
+  configVersion: CURRENT_CONFIG_VERSION,
   // 기본 커밋 모드입니다. "step"은 변경 파일별로 커밋 메시지를 생성하는 흐름입니다.
   mode: "step",
   // 기본 커밋 메시지 언어입니다. "ko"는 한국어 메시지 생성을 의미합니다.
@@ -17,9 +21,29 @@ export const DEFAULT_CONFIG = {
   modelDisplayName: null,
   // Git 히스토리 보호를 위해 AI 메시지를 생성해도 커밋 전 사용자 확인을 기본으로 요구합니다.
   confirmBeforeCommit: true,
+  // 커밋 전 생성된 메시지와 파일 요약을 보여주는 3차 UX 기본값입니다.
+  previewBeforeCommit: true,
+  // AI 메시지 재생성 무한 루프를 막기 위한 기본 제한값입니다.
+  maxRegenerateCount: 3,
+  // 팀 컨벤션 템플릿은 Phase 4에서 확장하며, 초기값은 미설정입니다.
+  template: null,
   // 외부 AI Provider로 코드를 보낼 때 사용자 확인을 받을지 여부입니다.
   // "always": 매번 확인, "once": 첫 번째 전송 시에만 확인, "never": 확인 없이 바로 전송
   confirmExternalTransmission: "always",
+  // 3차 Phase 2에서 대용량 diff 처리 여부를 판단하기 위한 기본 임계값입니다.
+  // Phase 1에서는 저장/로드 migration 대상에 포함해 이후 단계가 같은 config schema를 사용할 수 있게 합니다.
+  largeDiffThreshold: {
+    // diff 문자열 전체 길이가 이 값을 넘으면 chunking 후보가 됩니다.
+    maxCharacters: 30000,
+    // 변경 파일 수가 이 값을 넘으면 대용량 변경으로 간주할 수 있습니다.
+    maxFiles: 30,
+    // diff line 수가 이 값을 넘으면 요약 흐름으로 전환할 수 있습니다.
+    maxLines: 1200,
+  },
+  // npm update check 기능의 기본 활성화 여부입니다. Phase 7에서 실제 동작과 연결됩니다.
+  updateCheck: true,
+  // 마지막 update check 시각입니다. null이면 아직 확인한 적이 없다는 의미입니다.
+  lastUpdateCheckAt: null,
 };
 
 // CLI 설정값 검증과 command 분기에서 재사용할 수 있는 지원 커밋 모드 목록입니다.
