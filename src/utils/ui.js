@@ -1,6 +1,20 @@
 import chalk from "chalk";
 import ora from "ora";
 import prompts from "prompts";
+import { info, warn } from "./logger.js";
+
+// commit preview 이후 사용자가 선택할 수 있는 내부 decision 값입니다.
+// 화면 텍스트와 실제 분기 값을 분리해 다국어 UI로 바뀌어도 command flow가 깨지지 않게 합니다.
+export const COMMIT_DECISIONS = Object.freeze({
+  // 현재 메시지로 staging과 commit을 진행합니다.
+  COMMIT: "commit",
+  // 같은 diff로 AI 메시지를 다시 생성합니다.
+  REGENERATE: "regenerate",
+  // 사용자가 커밋 메시지를 직접 수정합니다.
+  EDIT: "edit",
+  // staging/commit 없이 안전하게 종료합니다.
+  CANCEL: "cancel",
+});
 
 /**
  * 로딩 표시 spinner 생성
@@ -40,6 +54,142 @@ export async function confirmCommit(message, { file } = {}) {
 
   // true 반환
   return response.confirmed === true;
+}
+
+/**
+ * Show a safe preview of the generated commit message before staging or commit.
+ *
+ * This intentionally prints only metadata, file names, and the final message.
+ * It must never receive or print raw diff contents.
+ *
+ * @param {object} options
+ * @param {string} options.message
+ * @param {string[]} [options.files]
+ * @param {string} [options.mode]
+ * @param {string} [options.provider]
+ * @param {string} [options.modelVersion]
+ */
+export function previewCommitMessage({
+  message,
+  files = [],
+  mode,
+  provider,
+  modelVersion,
+} = {}) {
+  // 메시지가 비어 있어도 preview 함수 자체는 터지지 않게 표시용 fallback을 사용합니다.
+  // 실제 commit 여부는 command flow에서 빈 메시지 검증으로 차단합니다.
+  const displayMessage =
+    typeof message === "string" && message.trim().length > 0
+      ? message.trim()
+      : "(empty commit message)";
+  // 파일 목록은 문자열이고 비어 있지 않은 값만 표시합니다.
+  // diff 원문은 절대 받거나 출력하지 않고 파일명 metadata만 보여줍니다.
+  const displayFiles = Array.isArray(files)
+    ? files.filter((file) => typeof file === "string" && file.trim().length > 0)
+    : [];
+  // provider와 modelVersion이 있을 때만 "provider / model" 형태로 노출합니다.
+  // config 전체를 출력하지 않아 baseURL/API key 같은 민감 정보가 섞이지 않게 합니다.
+  const modelLabel = [provider, modelVersion].filter(Boolean).join(" / ");
+
+  // logger.info는 내부에서 secret-like 값을 redact하므로 파일명/메시지에 민감 패턴이 있어도 마스킹됩니다.
+  info("Commit preview");
+  info(`Message: ${displayMessage}`);
+
+  if (displayFiles.length > 0) {
+    info("Files:");
+    for (const file of displayFiles) {
+      // 변경 파일은 사용자가 커밋 범위를 확인할 수 있도록 한 줄씩 출력합니다.
+      info(`- ${file}`);
+    }
+  } else {
+    info("Files: none");
+  }
+
+  if (mode) {
+    info(`Mode: ${mode}`);
+  }
+
+  if (modelLabel) {
+    info(`AI: ${modelLabel}`);
+  }
+}
+
+/**
+ * Ask the user how to proceed after previewing a commit message.
+ *
+ * @returns {Promise<string>} One of COMMIT_DECISIONS values.
+ */
+export async function selectCommitDecision() {
+  try {
+    // prompts select의 반환값은 COMMIT_DECISIONS 값으로 고정합니다.
+    // 이렇게 해야 command 계층이 UI 문구가 아니라 안정적인 enum으로 분기할 수 있습니다.
+    const response = await prompts(
+      {
+        type: "select",
+        name: "decision",
+        message: "How would you like to proceed?",
+        choices: [
+          { title: "Commit", value: COMMIT_DECISIONS.COMMIT },
+          { title: "Regenerate", value: COMMIT_DECISIONS.REGENERATE },
+          { title: "Edit manually", value: COMMIT_DECISIONS.EDIT },
+          { title: "Cancel", value: COMMIT_DECISIONS.CANCEL },
+        ],
+        initial: 0,
+      },
+      {
+        // Ctrl+C/ESC 등 취소 상황은 승인으로 취급하지 않고 질문을 중단합니다.
+        onCancel: () => false,
+      },
+    );
+
+    // 예상한 decision 값이면 그대로 반환하고, undefined/이상값이면 안전한 cancel로 처리합니다.
+    return Object.values(COMMIT_DECISIONS).includes(response?.decision)
+      ? response.decision
+      : COMMIT_DECISIONS.CANCEL;
+  } catch {
+    return COMMIT_DECISIONS.CANCEL;
+  }
+}
+
+/**
+ * Prompt for a manually edited commit message.
+ *
+ * @param {string} currentMessage
+ * @returns {Promise<string|null>} Trimmed message, or null when canceled/blank.
+ */
+export async function promptCommitMessageEdit(currentMessage = "") {
+  try {
+    // 기존 AI 메시지를 initial 값으로 넣어 사용자가 필요한 부분만 수정할 수 있게 합니다.
+    const response = await prompts(
+      {
+        type: "text",
+        name: "message",
+        message: "Edit commit message",
+        initial: typeof currentMessage === "string" ? currentMessage : "",
+      },
+      {
+        // 수동 수정 prompt가 취소되면 commit을 진행하지 않도록 null 반환 흐름으로 보냅니다.
+        onCancel: () => false,
+      },
+    );
+
+    // prompts가 취소되면 response.message가 없을 수 있으므로 null로 통일합니다.
+    if (typeof response?.message !== "string") {
+      return null;
+    }
+
+    // 앞뒤 공백만 제거합니다. 실제 AI 응답 정리(cleanAIResponse)는 command flow에서 한 번 더 수행합니다.
+    const editedMessage = response.message.trim();
+    if (editedMessage.length === 0) {
+      // 빈 commit message는 Git에서도 실패하므로 UI 단계에서 먼저 차단합니다.
+      warn("Commit message edit was empty. Commit canceled.");
+      return null;
+    }
+
+    return editedMessage;
+  } catch {
+    return null;
+  }
 }
 
 /**
