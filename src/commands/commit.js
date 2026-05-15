@@ -19,10 +19,13 @@ import { maskSensitiveDiff } from "../core/security.js";
 import { isUsageExhaustedError } from "../providers/errors.js";
 import { error, info, success, warn } from "../utils/logger.js";
 import {
+  COMMIT_DECISIONS,
   confirmAction,
-  confirmCommit,
   confirmExternalAITransmission,
+  previewCommitMessage,
+  promptCommitMessageEdit,
   selectAIUsageExhaustedAction,
+  selectCommitDecision,
 } from "../utils/ui.js";
 import { isValidMode } from "../utils/validator.js";
 
@@ -55,14 +58,6 @@ function loadRuntimeConfig() {
  * 자동화 환경으로 보고 confirm prompt를 생략합니다. 그 외에는 반드시 정리된 commit message를 보여준 뒤
  * 승인 여부를 받아 Git 히스토리 변경을 보호합니다.
  */
-async function shouldCommit(message, config, options = {}) {
-  if (config.confirmBeforeCommit === false) {
-    return true;
-  }
-
-  return confirmCommit(message, options);
-}
-
 /**
  * 로컬 LLM이 로컬 호스트를 가리키는지 확인합니다.
  *
@@ -292,6 +287,173 @@ function joinDiffs(fileDiffs) {
   return fileDiffs.map(({ diff }) => diff).join("");
 }
 
+// 설정에서 재생성 최대 횟수를 읽습니다.
+// 잘못된 값이 저장되어 있어도 무한 루프가 생기지 않도록 DEFAULT_CONFIG 값으로 되돌립니다.
+function getMaxRegenerateCount(config = {}) {
+  const value = Number(config.maxRegenerateCount ?? DEFAULT_CONFIG.maxRegenerateCount);
+
+  // 0도 허용합니다. 이 경우 Regenerate 선택지는 있어도 실제 재생성은 더 진행되지 않습니다.
+  if (Number.isInteger(value) && value >= 0) {
+    return value;
+  }
+
+  return DEFAULT_CONFIG.maxRegenerateCount;
+}
+
+// commit decision flow의 마지막 단계에서만 호출하는 staging/commit helper입니다.
+// prompt 생성이나 preview 단계에서는 절대 이 함수를 부르지 않아 사용자 승인 전 Git 히스토리 변경을 막습니다.
+function stageAndCommit(message, filesToCommit) {
+  // batch와 step 모두 같은 helper를 쓰되, filesToCommit으로 실제 staging 대상을 제한합니다.
+  for (const file of filesToCommit) {
+    addFile(file);
+  }
+
+  // core/git.js의 commit()은 argv 배열 방식으로 git commit -m을 실행하므로 shell 문자열 삽입 위험을 줄입니다.
+  commit(message, filesToCommit);
+}
+
+// 3차 Phase 1의 핵심 공통 흐름입니다.
+// AI 메시지 생성 -> preview -> Commit/Regenerate/Edit/Cancel 선택 -> staging/commit을 한곳에서 처리합니다.
+export async function runCommitDecisionFlow({
+  diff,
+  files,
+  file,
+  config,
+  mode,
+  sessionState,
+  transmissionOptions = {},
+}) {
+  // 429 복구나 model switch가 발생하면 config가 바뀔 수 있으므로 현재 flow 내부 상태로 관리합니다.
+  let currentConfig = config;
+  // 현재 preview/commit 대상 메시지입니다. 최초 생성, 재생성, 수동 수정 결과가 여기에 들어갑니다.
+  let currentMessage = null;
+  // Regenerate를 몇 번 수행했는지 세어 maxRegenerateCount를 넘기지 않게 합니다.
+  let regenerateCount = 0;
+  // 설정에서 재생성 제한을 읽고, 이상한 값은 기본값으로 보정합니다.
+  const maxRegenerateCount = getMaxRegenerateCount(config);
+  // step 모드는 file 하나, batch 모드는 files 배열을 commit 대상으로 사용합니다.
+  const filesToCommit = Array.isArray(files) ? files : [file].filter(Boolean);
+
+  // 최초 AI 메시지를 생성합니다. 이 함수 내부에서 외부 AI 전송 확인과 429 복구가 함께 처리됩니다.
+  const generated = await createCommitMessageWithRecovery({
+    diff,
+    language: currentConfig.language,
+    mode,
+    config: currentConfig,
+    transmissionOptions,
+    sessionState,
+  });
+
+  // 사용자가 외부 AI 전송을 거부했거나 429 복구를 중단하면 Git 작업 없이 종료합니다.
+  if (generated.stopped) {
+    warn("AI commit message generation was stopped. No staging or commit was performed.");
+    return { committed: false, config: currentConfig };
+  }
+
+  // 429 복구 중 provider/model/API key가 바뀌었을 수 있으므로 최신 config를 반영합니다.
+  currentConfig = generated.config ?? currentConfig;
+  // cleanAIResponse()까지 끝난 메시지를 decision loop의 시작 메시지로 사용합니다.
+  currentMessage = generated.message;
+
+  // 기존 1차/2차 자동화 호환 경로입니다.
+  // confirmBeforeCommit이 true가 아니면 preview/decision prompt를 띄우지 않고 기존처럼 바로 commit합니다.
+  if (currentConfig.confirmBeforeCommit !== true) {
+    stageAndCommit(currentMessage, filesToCommit);
+    return { committed: true, config: currentConfig };
+  }
+
+  // confirmBeforeCommit=true일 때만 사용자 검토 loop에 들어갑니다.
+  // Regenerate/Edit 후에도 continue로 다시 preview를 보여주기 위해 while 루프를 사용합니다.
+  while (true) {
+    // 빈 AI 응답이나 빈 수동 수정 결과는 commit하지 않습니다.
+    if (typeof currentMessage !== "string" || currentMessage.trim().length === 0) {
+      warn("AI returned an empty commit message. No staging or commit was performed.");
+      return { committed: false, config: currentConfig };
+    }
+
+    // preview와 decision UI에 넘길 안전한 metadata입니다.
+    // diff 원문은 여기에 포함하지 않아 화면 출력 경로로 흘러가지 않게 합니다.
+    const context = {
+      files: filesToCommit,
+      file,
+      mode,
+      provider: currentConfig.provider,
+      modelVersion: currentConfig.modelVersion,
+      regenerateCount,
+      maxRegenerateCount,
+    };
+
+    // 사용자에게 메시지/파일/mode/provider를 보여줍니다. diff 원문은 출력하지 않습니다.
+    previewCommitMessage({ message: currentMessage, ...context });
+
+    // 사용자의 다음 행동을 안정적인 enum 값으로 받습니다.
+    const decision = await selectCommitDecision({
+      message: currentMessage,
+      ...context,
+    });
+
+    // Commit 선택일 때만 실제 staging과 commit을 수행합니다.
+    if (decision === COMMIT_DECISIONS.COMMIT) {
+      stageAndCommit(currentMessage, filesToCommit);
+      return { committed: true, config: currentConfig };
+    }
+
+    // Cancel은 항상 Git 작업 없이 종료합니다.
+    if (decision === COMMIT_DECISIONS.CANCEL) {
+      warn("Commit was canceled. No staging or commit was performed.");
+      return { committed: false, config: currentConfig };
+    }
+
+    // Edit manually는 AI 호출 없이 사용자 입력을 받아 현재 메시지를 교체합니다.
+    if (decision === COMMIT_DECISIONS.EDIT) {
+      const editedMessage = await promptCommitMessageEdit(currentMessage);
+
+      // 수정 prompt 취소 또는 빈 입력은 commit하지 않고 종료합니다.
+      if (!editedMessage) {
+        warn("Commit message edit was canceled. No staging or commit was performed.");
+        return { committed: false, config: currentConfig };
+      }
+
+      // 사용자가 입력한 문자열도 AI 응답과 동일한 정리 규칙을 통과시켜 git commit -m에 안전한 형태로 만듭니다.
+      currentMessage = cleanAIResponse(editedMessage);
+      continue;
+    }
+
+    // Regenerate는 같은 diff를 유지하고 이전 메시지만 prompt에 추가해 새 메시지를 요청합니다.
+    if (decision === COMMIT_DECISIONS.REGENERATE) {
+      // 제한 횟수에 도달하면 AI를 더 호출하지 않고 사용자가 commit/edit/cancel 중 고르게 합니다.
+      if (regenerateCount >= maxRegenerateCount) {
+        warn("Maximum regenerate count reached. Choose commit, edit, or cancel.");
+        continue;
+      }
+
+      // 이번 재생성 시도를 카운트합니다.
+      regenerateCount += 1;
+
+      // previousMessage를 넘겨 prompt.js에서 "이전 메시지와 다른 표현" 지시를 추가하게 합니다.
+      const regenerated = await createCommitMessageWithRecovery({
+        diff,
+        language: currentConfig.language,
+        mode,
+        config: currentConfig,
+        previousMessage: currentMessage,
+        transmissionOptions,
+        sessionState,
+      });
+
+      // 재생성 중단/실패도 commit으로 fallback하지 않습니다.
+      if (regenerated.stopped) {
+        warn("AI commit message regeneration was stopped. No staging or commit was performed.");
+        return { committed: false, config: currentConfig };
+      }
+
+      // 복구 과정에서 config가 바뀌었을 수 있으므로 최신 config와 새 메시지를 반영합니다.
+      currentConfig = regenerated.config ?? currentConfig;
+      currentMessage = regenerated.message;
+    }
+  }
+}
+
 async function pushAfterSuccessfulCommit(options = {}) {
   // push는 원격 저장소에 Git 히스토리 전파하므로 새 커밋이 실제로 만들어진 뒤에만 실행합니다.
   if (!options.push) {
@@ -320,12 +482,23 @@ async function pushAfterSuccessfulCommit(options = {}) {
  * prompt 생성, provider routing, AI 응답 정리는 각각 core 모듈의 책임입니다. command 계층은 이 함수에서
  * 세 단계를 순서대로 연결하되, diff 원문이나 AI raw response를 로그로 출력하지 않습니다.
  */
-async function createCommitMessage({ diff, language, mode, config }) {
+async function createCommitMessage({
+  diff,
+  language,
+  mode,
+  config,
+  previousMessage,
+}) {
   // 민감 정보 마스킹
   const safeDiff = prepareDiffForAI(diff, config);
 
   // prompt 생성
-  const prompt = buildCommitPrompt({ diff: safeDiff, language, mode });
+  const prompt = buildCommitPrompt({
+    diff: safeDiff,
+    language,
+    mode,
+    previousMessage,
+  });
 
   // AI 모델을 통해 commit message 생성
   const rawMessage = await generateCommitMessage(prompt, config);
@@ -345,6 +518,7 @@ async function createCommitMessageWithRecovery({
   language,
   mode,
   config,
+  previousMessage,
   transmissionOptions = {},
   sessionState,
   skipInitialTransmission = false,
@@ -379,6 +553,7 @@ async function createCommitMessageWithRecovery({
           language: currentConfig.language || language,
           mode,
           config: currentConfig,
+          previousMessage,
         }),
         config: currentConfig,
       };
@@ -472,67 +647,25 @@ export async function runStepCommit(options = {}) {
 
   // 변경된 파일 목록 순회
   for (const { file, diff } of fileDiffs) {
-    // 외부 AI Provider 인지 확인 (루프 내 최신 config 반영)
-    const transmissionApproved = await shouldSendDiffToAI(
-      config,
-      { file, diff },
-      sessionState,
-    );
-
-    // 외부 AI 전송이 승인되지 않으면 종료
-    if (!transmissionApproved) {
-      warn(
-        "External AI transmission was canceled. No AI request, staging, or commit was performed.",
-      );
-      return;
-    }
-
-    // AI 모델을 통해 commit message 생성
-    // 429 복구 과정에서 config가 바뀌면 result.config에 담겨 나옵니다.
-    const result = await createCommitMessageWithRecovery({
+    // step 모드는 파일별 diff와 파일명 하나를 공통 decision flow에 넘깁니다.
+    // 각 파일마다 preview/decision이 독립적으로 동작합니다.
+    const decisionResult = await runCommitDecisionFlow({
       diff,
-      language: config.language,
-      mode: "step",
+      file,
       config,
-      transmissionOptions: { file },
+      mode: "step",
       sessionState,
-      skipInitialTransmission: true,
+      transmissionOptions: { file },
     });
 
-    if (result.stopped) {
-      warn(
-        "AI commit message generation was stopped. No staging or commit was performed.",
-      );
-      return;
+    // 429 복구 중 provider/model이 바뀌었으면 다음 파일 처리에도 새 config를 사용합니다.
+    config = decisionResult.config ?? config;
+
+    // 실제 commit이 생성된 경우에만 성공 카운트를 올립니다.
+    if (decisionResult.committed) {
+      committedCount += 1;
+      success(`${file} commit completed.`);
     }
-
-    // 429 복구 중 API Key를 바꾸거나 provider/model을 전환했다면 이후 파일도 새 설정을 사용해야 합니다.
-    // 그렇지 않으면 step 모드의 다음 파일에서 이미 소진된 provider를 다시 호출하거나 같은 복구 질문이 반복될 수 있습니다.
-    config = result.config ?? config;
-
-    const { message } = result;
-
-    // 파일 및 커밋 메시지 정보 출력
-    info(`파일: ${file}`);
-    info(`커밋 메시지: ${message}`);
-
-    // 커밋 승인 확인
-    const approved = await shouldCommit(message, config, { file });
-
-    // 커밋이 승인되지 않으면 다음 파일로 넘어감
-    if (!approved) {
-      warn(`${file} 커밋을 건너뜁니다.`);
-      continue;
-    }
-
-    // 파일 add
-    addFile(file);
-    // 커밋
-    commit(message, [file]);
-    // 커밋 횟수 증가
-    committedCount += 1;
-    // 커밋 완료
-    success(`${file} 커밋이 완료되었습니다.`);
   }
 
   // 커밋 횟수 확인
@@ -587,64 +720,29 @@ export async function runBatchCommit(options = {}) {
   const sessionState = {
     externalTransmissionApproved: false,
   };
+  // batch 모드는 여러 파일 diff를 하나의 prompt 입력으로 합칩니다.
   const batchDiff = joinDiffs(fileDiffs);
-  const transmissionApproved = await shouldSendDiffToAI(
+  // 다만 staging 대상은 fileDiffs를 통과한 파일 목록으로만 제한합니다.
+  const filesToCommit = fileDiffs.map(({ file }) => file);
+  // batch도 step과 같은 decision flow를 사용해 UX와 보안 정책을 통일합니다.
+  const decisionResult = await runCommitDecisionFlow({
+    diff: batchDiff,
+    files: filesToCommit,
     config,
-    { diff: batchDiff },
-    sessionState,
-  );
-  // 외부 AI 전송이 승인되지 않으면 종료
-  if (!transmissionApproved) {
-    warn(
-      "External AI transmission was canceled. No AI request, staging, or commit was performed.",
-    );
-    return;
-  }
-
-  // message 생성
-  // AI 호출 실패가 429/사용량 소진이면 사용자 선택에 따라 key 교체 또는 provider/model 변경 후 재시도합니다.
-  // stopped면 아직 staging 전이므로 batch commit 전체를 안전하게 중단합니다.
-  const result = await createCommitMessageWithRecovery({
-    diff: joinDiffs(fileDiffs),
-    language: config.language,
     mode: "batch",
-    config,
     sessionState,
-    skipInitialTransmission: true,
   });
 
-  if (result.stopped) {
-    warn(
-      "AI commit message generation was stopped. No staging or commit was performed.",
-    );
-    return;
-  }
+  // provider/model 전환 같은 복구 결과를 push 이전 최신 config로 반영합니다.
+  config = decisionResult.config ?? config;
 
-  // batch는 단일 커밋이지만, 429 복구 후 provider/model을 바꾼 경우 commit confirm 설정 등도 최신 config 기준으로 봅니다.
-  config = result.config ?? config;
-
-  const { message } = result;
-
-  info(`커밋 메시지: ${message}`);
-
-  // 커밋 승인 확인
-  const approved = await shouldCommit(message, config);
-  // 커밋이 승인되지 않으면 종료
-  if (!approved) {
+  // 사용자가 Cancel했거나 AI 생성이 중단되면 push도 실행하지 않습니다.
+  if (!decisionResult.committed) {
     warn("사용자가 batch 커밋을 취소했습니다.");
     return;
   }
 
-  // 커밋할 파일 목록
-  const filesToCommit = fileDiffs.map(({ file }) => file);
-  // 파일 add
-  for (const file of filesToCommit) {
-    addFile(file);
-  }
-  // 커밋
-  commit(message, filesToCommit);
-  // batch 모드는 단일 커밋이 성공한 직후에만 push합니다. commit()이 실패하면 예외가 전파되어 여기까지 오지 않습니다.
+  // commit이 실제로 성공한 뒤에만 push 확인 및 push를 진행합니다.
   await pushAfterSuccessfulCommit(options);
-  // 성공
-  success("Batch 커밋이 완료되었습니다.");
+  success("Batch commit completed.");
 }
