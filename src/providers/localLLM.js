@@ -3,9 +3,9 @@ import { isValidBaseURL } from "../utils/validator.js";
 import { createProviderHTTPError } from "./errors.js";
 
 // 로컬 서버가 꺼져 있거나 응답이 늦을 경우 CLI가 무한히 대기하는 것을 방지하기 위한 Timeout(기본 5초)
-// 로컬 LLM의 생성(Inference) 작업은 시간이 오래 걸릴 수 있으므로 별도의 긴 타임아웃(기본 60초)을 설정합니다.
+// 로컬 LLM의 생성(Inference) 작업은 시간이 오래 걸릴 수 있으므로 별도의 긴 타임아웃(기본 10분)을 설정합니다.
 const DEFAULT_TIMEOUT_MS = 5000;
-const DEFAULT_GENERATE_TIMEOUT_MS = 60000;
+const DEFAULT_GENERATE_TIMEOUT_MS = 600000;
 
 /**
  * localLLM 설정을 실제 요청에 사용할 수 있는 형태로 정규화합니다.
