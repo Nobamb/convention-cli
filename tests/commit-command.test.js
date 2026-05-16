@@ -704,3 +704,144 @@ test('runBatchCommit can switch from exhausted Gemini to localLLM and retry safe
     assert.equal(getStatus(repoDir), '');
   });
 });
+
+test('runBatchCommit rejects external large diff transmission before chunk summary calls', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    let fetchCalled = false;
+    globalThis.fetch = async () => {
+      fetchCalled = true;
+      throw new Error('External provider should not be called after large diff transmission rejection');
+    };
+
+    prompts.inject([false]);
+    saveRuntimeConfig({
+      mode: 'batch',
+      provider: 'openaiCompatible',
+      apiKey: 'test-key',
+      baseURL: 'https://example.test/v1',
+      modelVersion: 'test-model',
+      confirmBeforeCommit: false,
+      largeDiffThreshold: {
+        maxCharacters: 20,
+        maxFiles: 30,
+        maxLines: 1200,
+      },
+    });
+    writeFile(repoDir, 'README.md', `large diff rejection ${'x'.repeat(80)}\n`);
+
+    await commands.runBatchCommit();
+
+    assert.equal(fetchCalled, false);
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: initial commit');
+    assert.match(getStatus(repoDir), /^ M README\.md/m);
+  });
+});
+
+test('runBatchCommit sends masked chunk prompts and final summary prompt for external large diff', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    const rawSecret = 'large-diff-secret-value';
+    const promptsSent = [];
+
+    globalThis.fetch = async (_url, options = {}) => {
+      const payload = JSON.parse(options.body);
+      const prompt = payload.messages[0].content;
+      promptsSent.push(prompt);
+
+      return {
+        ok: true,
+        async json() {
+          return {
+            choices: [
+              {
+                message: {
+                  content: prompt.includes('Git diff chunk:')
+                    ? 'README 변경과 토큰 값 마스킹 처리를 요약함'
+                    : 'chore: update project files',
+                },
+              },
+            ],
+          };
+        },
+      };
+    };
+
+    prompts.inject([true, 'commit']);
+    saveRuntimeConfig({
+      mode: 'batch',
+      provider: 'openaiCompatible',
+      apiKey: 'test-key',
+      baseURL: 'https://example.test/v1',
+      modelVersion: 'test-model',
+      confirmBeforeCommit: true,
+      largeDiffThreshold: {
+        maxCharacters: 20,
+        maxFiles: 30,
+        maxLines: 1200,
+      },
+    });
+    writeFile(repoDir, 'README.md', `TOKEN=${rawSecret}\n${'x'.repeat(80)}\n`);
+
+    await commands.runBatchCommit();
+
+    assert.equal(promptsSent.length >= 2, true);
+    assert.equal(promptsSent.some((prompt) => prompt.includes(rawSecret)), false);
+    assert.equal(promptsSent.some((prompt) => prompt.includes('TOKEN=[REDACTED]')), true);
+    assert.equal(promptsSent.at(-1).includes('Merged change summary:'), true);
+    assert.equal(promptsSent.at(-1).includes('Git diff:'), false);
+    assert.equal(promptsSent.at(-1).includes('diff --git'), false);
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: update project files');
+  });
+});
+
+test('runBatchCommit regenerate keeps large diff on summary prompt path', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    const promptsSent = [];
+
+    globalThis.fetch = async (_url, options = {}) => {
+      const payload = JSON.parse(options.body);
+      const prompt = payload.messages[0].content;
+      promptsSent.push(prompt);
+
+      return {
+        ok: true,
+        async json() {
+          return {
+            choices: [
+              {
+                message: {
+                  content: prompt.includes('Git diff chunk:')
+                    ? 'README 대용량 변경 요약'
+                    : 'chore: update project files',
+                },
+              },
+            ],
+          };
+        },
+      };
+    };
+
+    prompts.inject([true, 'regenerate', true, 'commit']);
+    saveRuntimeConfig({
+      mode: 'batch',
+      provider: 'openaiCompatible',
+      apiKey: 'test-key',
+      baseURL: 'https://example.test/v1',
+      modelVersion: 'test-model',
+      confirmBeforeCommit: true,
+      largeDiffThreshold: {
+        maxCharacters: 20,
+        maxFiles: 30,
+        maxLines: 1200,
+      },
+    });
+    writeFile(repoDir, 'README.md', `large regenerate ${'x'.repeat(80)}\n`);
+
+    await commands.runBatchCommit();
+
+    const finalPrompts = promptsSent.filter((prompt) => prompt.includes('Merged change summary:'));
+    assert.equal(finalPrompts.length, 2);
+    assert.equal(finalPrompts.every((prompt) => !prompt.includes('Git diff:')), true);
+    assert.equal(finalPrompts.at(-1).includes('Previous message:'), true);
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: update project files');
+  });
+});
