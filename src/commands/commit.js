@@ -5,7 +5,7 @@ import {
 import { promptApiKey, saveApiKey } from "../auth/apiKey.js";
 import { setupModelInteractively } from "./model.js";
 import { loadConfig } from "../config/store.js";
-import { cleanAIResponse, generateCommitMessage } from "../core/ai.js";
+import { cleanAIResponse, generateLargeDiffCommitMessage } from "../core/ai.js";
 import {
   addFile,
   commit,
@@ -14,7 +14,6 @@ import {
   isGitRepository,
   push,
 } from "../core/git.js";
-import { buildCommitPrompt } from "../core/prompt.js";
 import { maskSensitiveDiff } from "../core/security.js";
 import { isUsageExhaustedError } from "../providers/errors.js";
 import { error, info, success, warn } from "../utils/logger.js";
@@ -177,6 +176,31 @@ function prepareDiffForAI(diff, config) {
 }
 
 /**
+ * 파일별 diff를 AI 처리에 적합한 형태로 준비합니다.
+ * 
+ * 외부 AI Provider를 사용하고, 해당 provider의 설정에 따라 diff를 마스킹할지 결정합니다.
+ * 1. 내부 제공 모델(gemini 등)을 사용하는 경우에는 원본 diff를 그대로 전달합니다.
+ * 2. 외부 제공 모델을 사용하는 경우(외부 AI provider)에는 `maskSensitiveDiff` 함수를 호출하여
+ *    민감해 보이는 값을 마스킹 처리한 후 반환합니다.
+ * 
+ * @param {Array<Object>} fileDiffs - 파일별 diff 정보 배열
+ * @param {Object} config - AI 설정 객체
+ * @returns {Array<Object>} AI 처리에 사용될 준비된 파일별 diff 정보 배열
+ */
+
+function prepareFileDiffsForAI(fileDiffs, config) {
+  if (!Array.isArray(fileDiffs)) {
+    return [];
+  }
+
+  // 대용량 diff chunk 요약도 외부 provider 호출 전에 같은 마스킹 정책을 거칩니다.
+  return fileDiffs.map((entry) => ({
+    ...entry,
+    diff: prepareDiffForAI(entry.diff, config),
+  }));
+}
+
+/**
  * 현재 provider가 새 API Key 입력 후 재시도할 수 있는지 판단합니다.
  *
  * localLLM은 일반적으로 API Key가 필요하지 않으므로 key 교체 선택지를 숨깁니다.
@@ -312,10 +336,24 @@ function stageAndCommit(message, filesToCommit) {
   commit(message, filesToCommit);
 }
 
-// 3차 Phase 1의 핵심 공통 흐름입니다.
-// AI 메시지 생성 -> preview -> Commit/Regenerate/Edit/Cancel 선택 -> staging/commit을 한곳에서 처리합니다.
+/**
+ * AI 커밋 메시지 생성부터 사용자 승인, 최종 커밋까지의 핵심 공통 흐름을 제어합니다.
+ * AI가 생성한 메시지를 사용자에게 보여주고(preview), 사용자의 결정(커밋, 재생성, 수동 수정, 취소)에 따라 루프를 돕니다.
+ * 이 과정에서 429(사용량 초과) 오류 복구와 재생성 횟수 제한 등을 함께 관리합니다.
+ * 
+ * @param {Object} params
+ * @param {string} params.diff - AI에게 전달할 전체 diff 문자열
+ * @param {Array} params.fileDiffs - 파일별 diff 정보 배열 (대용량 diff 분석 및 요약에 사용)
+ * @param {Array} params.files - 커밋 대상 파일 경로 배열
+ * @param {string} params.file - (Step 모드) 현재 처리 중인 단일 파일명
+ * @param {Object} params.config - 현재 실행 환경의 런타임 설정
+ * @param {string} params.mode - 실행 모드 ('step' 또는 'batch')
+ * @param {Object} params.sessionState - 외부 전송 승인 등 세션 전반의 상태를 유지하는 객체
+ * @param {Object} params.transmissionOptions - UI 출력 시 파일명 등 컨텍스트 정보
+ */
 export async function runCommitDecisionFlow({
   diff,
+  fileDiffs,
   files,
   file,
   config,
@@ -337,6 +375,8 @@ export async function runCommitDecisionFlow({
   // 최초 AI 메시지를 생성합니다. 이 함수 내부에서 외부 AI 전송 확인과 429 복구가 함께 처리됩니다.
   const generated = await createCommitMessageWithRecovery({
     diff,
+    fileDiffs,
+    files: filesToCommit,
     language: currentConfig.language,
     mode,
     config: currentConfig,
@@ -433,6 +473,8 @@ export async function runCommitDecisionFlow({
       // previousMessage를 넘겨 prompt.js에서 "이전 메시지와 다른 표현" 지시를 추가하게 합니다.
       const regenerated = await createCommitMessageWithRecovery({
         diff,
+        fileDiffs,
+        files: filesToCommit,
         language: currentConfig.language,
         mode,
         config: currentConfig,
@@ -484,6 +526,8 @@ async function pushAfterSuccessfulCommit(options = {}) {
  */
 async function createCommitMessage({
   diff,
+  fileDiffs,
+  files,
   language,
   mode,
   config,
@@ -491,17 +535,19 @@ async function createCommitMessage({
 }) {
   // 민감 정보 마스킹
   const safeDiff = prepareDiffForAI(diff, config);
+  const safeFileDiffs = prepareFileDiffsForAI(fileDiffs, config);
 
   // prompt 생성
-  const prompt = buildCommitPrompt({
+  // AI 모델을 통해 commit message 생성
+  const rawMessage = await generateLargeDiffCommitMessage({
     diff: safeDiff,
+    fileDiffs: safeFileDiffs,
+    files,
+    config,
     language,
     mode,
     previousMessage,
   });
-
-  // AI 모델을 통해 commit message 생성
-  const rawMessage = await generateCommitMessage(prompt, config);
 
   // AI 모델의 응답 정리
   return cleanAIResponse(rawMessage);
@@ -515,6 +561,8 @@ async function createCommitMessage({
  */
 async function createCommitMessageWithRecovery({
   diff,
+  fileDiffs,
+  files,
   language,
   mode,
   config,
@@ -523,10 +571,14 @@ async function createCommitMessageWithRecovery({
   sessionState,
   skipInitialTransmission = false,
 }) {
+  // 설정
   let currentConfig = config;
+  // 전송 skip 여부
   let shouldSkipTransmission = skipInitialTransmission;
 
+  // 트랜잭션
   while (true) {
+    // 전송 확인
     const transmissionApproved = shouldSkipTransmission
       ? true
       : await shouldSendDiffToAI(
@@ -538,6 +590,7 @@ async function createCommitMessageWithRecovery({
     // 첫 시도 이후(재시도 루프)에는 반드시 전송 확인을 다시 거칩니다.
     shouldSkipTransmission = false;
 
+    // 전송이 승인되지 않았다면 종료
     if (!transmissionApproved) {
       return {
         stopped: true,
@@ -545,11 +598,15 @@ async function createCommitMessageWithRecovery({
       };
     }
 
+    // try/catch 블록
     try {
+      // commit message 생성
       return {
         stopped: false,
         message: await createCommitMessage({
           diff,
+          fileDiffs,
+          files,
           language: currentConfig.language || language,
           mode,
           config: currentConfig,
@@ -557,17 +614,19 @@ async function createCommitMessageWithRecovery({
         }),
         config: currentConfig,
       };
+    // 사용량 소진 오류 catch
     } catch (providerError) {
       if (!isUsageExhaustedError(providerError)) {
         throw providerError;
       }
-
+      // 사용량 소진 오류 시 경고
       warn(
         "AI Provider 사용량 한도 또는 rate limit으로 commit message 생성이 중단되었습니다.",
       );
-
+      // 사용량 소진 오류 복구
       const recovery = await recoverFromUsageExhaustedError(currentConfig);
 
+      // 복구가 중단되었는지 확인
       if (recovery.stopped) {
         return {
           stopped: true,
@@ -575,6 +634,7 @@ async function createCommitMessageWithRecovery({
         };
       }
 
+      // 외부 전송 승인 초기화
       if (shouldResetExternalTransmissionApproval(currentConfig, recovery.config)) {
         // provider/model/baseURL/authType 등이 바뀌면 같은 diff라도 전송 대상이 바뀔 수 있습니다.
         // 이전 provider에 대해 받은 "once" 승인을 새 provider에 재사용하지 않도록 세션 승인을 초기화합니다.
@@ -651,6 +711,7 @@ export async function runStepCommit(options = {}) {
     // 각 파일마다 preview/decision이 독립적으로 동작합니다.
     const decisionResult = await runCommitDecisionFlow({
       diff,
+      fileDiffs: [{ file, diff }],
       file,
       config,
       mode: "step",
@@ -709,7 +770,7 @@ export async function runBatchCommit(options = {}) {
     return;
   }
 
-  //
+  // batch 모드에서 커밋 가능한 diff가 변경된 파일보다 적으면 경고
   if (fileDiffs.length < changedFiles.length) {
     warn(
       "일부 파일은 민감 파일이거나 diff가 없어 batch 커밋 대상에서 제외됩니다.",
@@ -727,6 +788,7 @@ export async function runBatchCommit(options = {}) {
   // batch도 step과 같은 decision flow를 사용해 UX와 보안 정책을 통일합니다.
   const decisionResult = await runCommitDecisionFlow({
     diff: batchDiff,
+    fileDiffs,
     files: filesToCommit,
     config,
     mode: "batch",
