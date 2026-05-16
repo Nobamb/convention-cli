@@ -30,15 +30,14 @@ export const DEFAULT_CONFIG = {
   // 외부 AI Provider로 코드를 보낼 때 사용자 확인을 받을지 여부입니다.
   // "always": 매번 확인, "once": 첫 번째 전송 시에만 확인, "never": 확인 없이 바로 전송
   confirmExternalTransmission: "always",
-  // 3차 Phase 2에서 대용량 diff 처리 여부를 판단하기 위한 기본 임계값입니다.
-  // Phase 1에서는 저장/로드 migration 대상에 포함해 이후 단계가 같은 config schema를 사용할 수 있게 합니다.
+  // 대용량 diff 처리 여부를 판단하기 위한 기본 임계값입니다.
   largeDiffThreshold: {
     // diff 문자열 전체 길이가 이 값을 넘으면 chunking 후보가 됩니다.
-    maxCharacters: 30000,
+    maxCharacters: 10000,
     // 변경 파일 수가 이 값을 넘으면 대용량 변경으로 간주할 수 있습니다.
-    maxFiles: 30,
+    maxFiles: 10,
     // diff line 수가 이 값을 넘으면 요약 흐름으로 전환할 수 있습니다.
-    maxLines: 1200,
+    maxLines: 300,
   },
   // npm update check 기능의 기본 활성화 여부입니다. Phase 7에서 실제 동작과 연결됩니다.
   updateCheck: true,
