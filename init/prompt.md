@@ -342,6 +342,14 @@ test-A.md라는 파일을 한국어로 적어줘
 
 12-1. L 단계는 Large Diff Commit Message Agent이므로 @work_process/advanced/L/research-L.md와 @work_process/advanced/L/test-L.md를 확인하고, large diff 감지, chunk 요약, summary merge, summary 기반 commit message prompt 생성, AI 커밋 메시지 생성까지 연결해줘. 원본 대용량 diff를 로그에 출력하지 않는지 반드시 확인해줘.
 
+12-2. 지금 localLLM으로 convention을 실행했을 때 localLLM이 끝까지 diff를 다 읽지 못할 정도로 큰 코드의 경우에는 다 읽지 못한 상태에서 오류가 발생함과 동시에 convention이 중단되면서 이어지지 않는 문제가 발생을 해 그래서 일단 localLLM이 응답을 하지 못하였을 경우에는 다른 저수준 LLM을 사용할 것인지, 또는 gemini나 openai등의 api를 사용할 것인지, 아니면 이대로 중단할 것인지에 대한 선택지를 사용자에게 제공해서 진행한 이후에 다시 convention을 진행할 수 있도록 하면 좋겠어 이전 고추론 localLLM을 쓸 지 아니면 이미 설정한 api 또는 저추론 모델을 쓸 지 사용자에게 선택지를 제공할 수 있도록 해주면서 앞으로도 비슷한 상황을 겪을 때 계속 고추론 LLM => 기본 저추론 모델 또는 api => 고추론 LLM 순으로 사용하게 할 지, 아니면 기존에 선택한 저추론 모델 또는 api를 그대로 사용할 것인지 묻도록 설정하게 해줘
+
+[AI Provider 장애 극복 및 자동 Fallback 구현] localLLM 실행 중 타임아웃이나 fetch failed 등 응답 불능 상태가 발생할 경우, 전체 프로세스를 중단하지 않고 사용자에게 장애 복구 선택지를 제공하는 로직을 구현해줘.
+
+선택지 제공: ① 다른 로컬 모델로 변경, ② 설정된 Cloud API로 전환, ③ 현재 파일 건너뛰기, ④ 전체 중단 중 선택 가능하게 할 것.
+세션 정책 설정: 모델 전환 시, "이후의 모든 파일에도 이 설정을 적용할지(고정)" 아니면 "다음 파일에서는 다시 원래의 고성능 모델로 시도할지(유동)"를 사용자에게 물어보고 세션 동안 유지할 것.
+이어서 진행: 모델 교체 후, 작업 중이던 diff 정보를 그대로 유지한 채 즉시 다시 생성을 시도하여 사용자 경험이 끊기지 않게 할 것.
+
 ### Phase 3. 파일 변경 사항 자동 그룹핑
 
 13. gpt-5.5 medium 모델 agent 1개를 M 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 M 단계 참고해서 M단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/M 폴더를 만들고 그 안에 test-M.md로 정리해줘. 그리고 Changed File Classifier 구현 계획을 @work_process/advanced/M/research-M.md 파일로 정리해줘.
