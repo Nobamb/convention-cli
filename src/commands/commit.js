@@ -1,10 +1,10 @@
-import {
+﻿import {
   DEFAULT_CONFIG,
   DEFAULT_LOCAL_LLM_BASE_URL,
 } from "../config/defaults.js";
 import { promptApiKey, saveApiKey } from "../auth/apiKey.js";
 import { setupModelInteractively } from "./model.js";
-import { loadConfig } from "../config/store.js";
+import { loadConfig, saveConfig } from "../config/store.js";
 import { cleanAIResponse, generateLargeDiffCommitMessage } from "../core/ai.js";
 import {
   addFile,
@@ -25,6 +25,9 @@ import {
   promptCommitMessageEdit,
   selectAIUsageExhaustedAction,
   selectCommitDecision,
+  selectLocalLLMFallbackPolicy,
+  selectLocalLLMFailureAction,
+  selectPostFallbackConfigAction,
 } from "../utils/ui.js";
 import { isValidMode } from "../utils/validator.js";
 
@@ -278,6 +281,123 @@ function shouldResetExternalTransmissionApproval(previousConfig = {}, nextConfig
 }
 
 /**
+ * 세션 중 임시로 보관할 config를 복사합니다.
+ *
+ * config 객체에는 복구 과정에서 메모리 전용 apiKey가 붙을 수 있으므로
+ * 원래 localLLM 복원용 snapshot에는 secret 성격의 값을 남기지 않습니다.
+ * saveConfig()도 secret 제거를 수행하지만 세션 상태 자체도 secret을 들고 있지 않는 편이 안전합니다.
+ */
+function cloneConfigWithoutRuntimeSecrets(config = {}) {
+  const { apiKey, token, secret, password, ...safeConfig } = config || {};
+  return {
+    ...safeConfig,
+  };
+}
+
+/**
+ * 현재 오류가 localLLM 응답 불능으로 복구 가능한 상황인지 판단합니다.
+ *
+ * localLLM은 대용량 diff를 처리하다가 AbortError, fetch failed, 빈 응답, HTTP 5xx 같은 형태로
+ * 실패할 수 있습니다. 이 경우 Git 작업을 바로 중단하지 않고 사용자가 대체 모델/API를 고를 수 있게 합니다.
+ */
+function isLocalLLMUnavailableError(error, config = {}) {
+  if (config.provider !== "localLLM") {
+    return false;
+  }
+
+  // 429는 기존 사용량/rate limit 복구 흐름에서 처리하므로 여기서는 제외합니다.
+  if (isUsageExhaustedError(error)) {
+    return false;
+  }
+
+  // localLLM provider에서 발생한 그 밖의 생성 실패는 현재 diff를 처리하지 못한 상태로 간주합니다.
+  return true;
+}
+
+/**
+ * localLLM 실패 시 사용자 선택에 따라 현재 파일 건너뛰기, 전체 중단,
+ * 또는 다른 localLLM/Cloud API provider로 전환 후 재시도를 준비합니다.
+ *
+ * setupModelInteractively()는 기존 --model 설정 flow를 재사용하므로 API Key는 credentials.json에만 저장되고
+ * Cloud API로 바뀐 경우 createCommitMessageWithRecovery()의 다음 루프에서 외부 전송 확인 gate를 다시 통과합니다.
+ */
+async function recoverFromLocalLLMFailure(config, sessionState = {}) {
+  // 최초 실패 시점의 localLLM 설정을 보관해 작업 종료 후 복원하거나 temporary 정책에서 다음 파일에 재사용합니다.
+  if (!sessionState.originalLocalLLMConfig) {
+    sessionState.originalLocalLLMConfig = cloneConfigWithoutRuntimeSecrets(config);
+  }
+
+  // convention 작업에 대한 사용자의 행동 정책을 결정합니다.
+  const action = await selectLocalLLMFailureAction();
+
+  // 사용자가 파일을 건너뛰기를 원하면 다음 파일 처리로 넘어갑니다.
+  if (action === "skipFile") {
+    return {
+      skipped: true,
+      stopped: false,
+      config,
+    };
+  }
+
+  // 사용자가 작업을 중단하기로 선택하면, 현재 세션을 종료합니다.
+  if (action !== "switchModel") {
+    return {
+      stopped: true,
+      config,
+    };
+  }
+
+  // 사용자가 직접 다른 localLLM, gemini, openaiCompatible 등을 선택하도록 기존 모델 설정 UI를 재사용합니다.
+  // 이 함수는 config.json을 갱신하므로 작업 종료 후 유지/복원 여부를 별도로 다시 묻습니다.
+  const switchedConfig = await setupModelInteractively();
+  sessionState.localLLMFallbackSwitched = true;
+
+  const policy = await selectLocalLLMFallbackPolicy();
+  sessionState.localLLMFallbackPolicy = policy;
+
+  return {
+    stopped: false,
+    config: switchedConfig,
+    // temporary 정책이면 현재 diff 재시도에만 대체 설정을 쓰고 다음 파일은 원래 localLLM 설정으로 돌아갑니다.
+    configAfterSuccess:
+      policy === "temporary" ? sessionState.originalLocalLLMConfig : switchedConfig,
+  };
+}
+
+/**
+ * localLLM 실패 복구 중 provider 설정이 바뀐 경우, convention 작업이 끝난 뒤
+ * 사용자가 현재 대체 설정을 유지할지 원래 localLLM으로 복원할지 결정하게 합니다.
+ */
+async function finalizeLocalLLMFallbackConfig(sessionState = {}) {
+  if (sessionState.localLLMFallbackFinalized) {
+    return;
+  }
+
+  if (
+    !sessionState.localLLMFallbackSwitched ||
+    !sessionState.originalLocalLLMConfig
+  ) {
+    return;
+  }
+
+  // commit/push 예외와 finally 재진입에서도 같은 질문을 두 번 띄우지 않도록 먼저 완료 처리합니다.
+  sessionState.localLLMFallbackFinalized = true;
+
+  // convention 작업이 끝난 뒤, localLLM 장애 복구 과정에서 저장된 provider 설정의 유지 여부를 정합니다.
+  const action = await selectPostFallbackConfigAction();
+
+  // 사용자가 원래 localLLM으로 복원하기를 원하면 원래 localLLM 설정으로 복원합니다.
+  if (action === "restoreOriginal") {
+    saveConfig(sessionState.originalLocalLLMConfig);
+    success("이전에 사용하던 localLLM 설정으로 복원했습니다.");
+    return;
+  }
+
+  // 사용자가 현재 모델/API 설정을 유지하기로 선택하면, 현재 설정을 유지합니다.
+  info("현재 모델/API 설정을 유지합니다.");
+}
+
+/**
  * diff가 존재하는 파일 목록만 기준으로 하나의 batch commit message를 생성합니다.
  *
  * `getChangedFiles()`에는 untracked-only 파일이나 민감 파일이 포함될 수 있습니다. 반면 `getFileDiffs()`는
@@ -311,8 +431,10 @@ function joinDiffs(fileDiffs) {
   return fileDiffs.map(({ diff }) => diff).join("");
 }
 
-// 설정에서 재생성 최대 횟수를 읽습니다.
-// 잘못된 값이 저장되어 있어도 무한 루프가 생기지 않도록 DEFAULT_CONFIG 값으로 되돌립니다.
+/**
+ * 설정에서 재생성 최대 횟수를 읽습니다.
+ * 잘못된 값이 저장되어 있어도 무한 루프가 생기지 않도록 DEFAULT_CONFIG 값으로 되돌립니다.
+ */
 function getMaxRegenerateCount(config = {}) {
   const value = Number(config.maxRegenerateCount ?? DEFAULT_CONFIG.maxRegenerateCount);
 
@@ -324,8 +446,10 @@ function getMaxRegenerateCount(config = {}) {
   return DEFAULT_CONFIG.maxRegenerateCount;
 }
 
-// commit decision flow의 마지막 단계에서만 호출하는 staging/commit helper입니다.
-// prompt 생성이나 preview 단계에서는 절대 이 함수를 부르지 않아 사용자 승인 전 Git 히스토리 변경을 막습니다.
+/**
+ * commit decision flow의 마지막 단계에서만 호출하는 staging/commit helper입니다.
+ * prompt 생성이나 preview 단계에서는 절대 이 함수를 부르지 않아 사용자 승인 전 Git 히스토리 변경을 막습니다.
+ */
 function stageAndCommit(message, filesToCommit) {
   // batch와 step 모두 같은 helper를 쓰되, filesToCommit으로 실제 staging 대상을 제한합니다.
   for (const file of filesToCommit) {
@@ -387,7 +511,14 @@ export async function runCommitDecisionFlow({
   // 사용자가 외부 AI 전송을 거부했거나 429 복구를 중단하면 Git 작업 없이 종료합니다.
   if (generated.stopped) {
     warn("AI commit message generation was stopped. No staging or commit was performed.");
-    return { committed: false, config: currentConfig };
+    
+    // 사용자가 파일을 건너뛰기를 원하면 다음 파일 처리로 넘어갑니다.
+    if (generated.skipped) {
+      return { committed: false, skipped: true, config: generated.config ?? currentConfig };
+    }
+
+    // 사용자가 작업을 중단하기로 선택하면, 현재 세션을 종료합니다.
+    return { committed: false, stopped: true, config: generated.config ?? currentConfig };
   }
 
   // 429 복구 중 provider/model/API key가 바뀌었을 수 있으므로 최신 config를 반영합니다.
@@ -486,7 +617,14 @@ export async function runCommitDecisionFlow({
       // 재생성 중단/실패도 commit으로 fallback하지 않습니다.
       if (regenerated.stopped) {
         warn("AI commit message regeneration was stopped. No staging or commit was performed.");
-        return { committed: false, config: currentConfig };
+
+        // 사용자가 파일을 건너뛰기를 원하면 다음 파일 처리로 넘어갑니다.
+        if (regenerated.skipped) {
+          return { committed: false, skipped: true, config: regenerated.config ?? currentConfig };
+        }
+
+        // 사용자가 작업을 중단하기로 선택하면, 현재 세션을 종료합니다. 
+        return { committed: false, stopped: true, config: regenerated.config ?? currentConfig };
       }
 
       // 복구 과정에서 config가 바뀌었을 수 있으므로 최신 config와 새 메시지를 반영합니다.
@@ -496,6 +634,12 @@ export async function runCommitDecisionFlow({
   }
 }
 
+/**
+ * 커밋이 완료된 후 원격 저장소로 push할지 확인하고 실행합니다.
+ * @param {object} options 옵션
+ * @param {boolean} options.push push 여부
+ * @returns {Promise<void>}
+ */
 async function pushAfterSuccessfulCommit(options = {}) {
   // push는 원격 저장소에 Git 히스토리 전파하므로 새 커밋이 실제로 만들어진 뒤에만 실행합니다.
   if (!options.push) {
@@ -575,6 +719,8 @@ async function createCommitMessageWithRecovery({
   let currentConfig = config;
   // 전송 skip 여부
   let shouldSkipTransmission = skipInitialTransmission;
+  // temporary fallback은 현재 diff 성공 후 다음 파일부터 원래 localLLM config로 되돌리기 위해 결과 config를 따로 보관합니다.
+  let configAfterSuccessfulGeneration = null;
 
   // 트랜잭션
   while (true) {
@@ -601,21 +747,69 @@ async function createCommitMessageWithRecovery({
     // try/catch 블록
     try {
       // commit message 생성
+      const message = await createCommitMessage({
+        diff,
+        fileDiffs,
+        files,
+        language: currentConfig.language || language,
+        mode,
+        config: currentConfig,
+        previousMessage,
+      });
+
+      // 트랜잭션 내에서 config가 변경되었을 경우, 원래 config로 복원합니다.
+      const resultConfig = configAfterSuccessfulGeneration ?? currentConfig;
+      configAfterSuccessfulGeneration = null;
+
+      // commit message 생성 성공
       return {
         stopped: false,
-        message: await createCommitMessage({
-          diff,
-          fileDiffs,
-          files,
-          language: currentConfig.language || language,
-          mode,
-          config: currentConfig,
-          previousMessage,
-        }),
-        config: currentConfig,
+        message,
+        config: resultConfig,
       };
     // 사용량 소진 오류 catch
     } catch (providerError) {
+      // localLLM 사용 불가능 오류 catch
+      if (isLocalLLMUnavailableError(providerError, currentConfig)) {
+        warn(
+          "localLLM이 현재 diff를 처리하지 못했습니다. 다른 localLLM 또는 API 사용 여부를 확인합니다.",
+        );
+
+        const localRecovery = await recoverFromLocalLLMFailure(currentConfig, sessionState);
+
+        // 파일 건너뛰기
+        if (localRecovery.skipped) {
+          return {
+            stopped: true,
+            skipped: true,
+            message: null,
+            config: localRecovery.config,
+          };
+        }
+        // 작업 중단
+        if (localRecovery.stopped) {
+          return {
+            stopped: true,
+            message: null,
+            config: localRecovery.config,
+          };
+        }
+
+        // 외부 전송 승인 초기화
+        if (shouldResetExternalTransmissionApproval(currentConfig, localRecovery.config)) {
+          // localLLM에서 Cloud API 또는 다른 endpoint로 바뀌면 이전 승인 상태를 재사용하지 않습니다.
+          sessionState.externalTransmissionApproved = false;
+        }
+
+        // config 업데이트
+        currentConfig = localRecovery.config;
+        // configAfterSuccess는 recovery가 성공해서 원래 설정으로 돌아가는 경우에만 사용합니다.
+        // 즉시 next iteration으로 넘어가므로 별도 저장 없이 루프 시작 시점에 반영하면 충분합니다.
+        configAfterSuccessfulGeneration = localRecovery.configAfterSuccess ?? null;
+        // 다음 루프에서 복구된 설정으로 다시 시도
+        continue;
+      }
+      // 사용량 소진 오류 catch
       if (!isUsageExhaustedError(providerError)) {
         throw providerError;
       }
@@ -631,6 +825,7 @@ async function createCommitMessageWithRecovery({
         return {
           stopped: true,
           message: null,
+          config: recovery.config,
         };
       }
 
@@ -706,36 +901,47 @@ export async function runStepCommit(options = {}) {
   };
 
   // 변경된 파일 목록 순회
-  for (const { file, diff } of fileDiffs) {
-    // step 모드는 파일별 diff와 파일명 하나를 공통 decision flow에 넘깁니다.
-    // 각 파일마다 preview/decision이 독립적으로 동작합니다.
-    const decisionResult = await runCommitDecisionFlow({
-      diff,
-      fileDiffs: [{ file, diff }],
-      file,
-      config,
-      mode: "step",
-      sessionState,
-      transmissionOptions: { file },
-    });
+  try {
+    for (const { file, diff } of fileDiffs) {
+      // step 모드는 파일별 diff와 파일명 하나를 공통 decision flow에 넘깁니다.
+      // 각 파일마다 preview/decision이 독립적으로 동작합니다.
+      const decisionResult = await runCommitDecisionFlow({
+        diff,
+        fileDiffs: [{ file, diff }],
+        file,
+        config,
+        mode: "step",
+        sessionState,
+        transmissionOptions: { file },
+      });
 
-    // 429 복구 중 provider/model이 바뀌었으면 다음 파일 처리에도 새 config를 사용합니다.
-    config = decisionResult.config ?? config;
+      // provider/model 전환 같은 복구 결과를 다음 파일 처리에도 최신 config로 반영합니다.
+      config = decisionResult.config ?? config;
 
-    // 실제 commit이 생성된 경우에만 성공 카운트를 올립니다.
-    if (decisionResult.committed) {
-      committedCount += 1;
-      success(`${file} commit completed.`);
+      // 작업 중지
+      if (decisionResult.stopped) {
+        break;
+      }
+
+      // 실제 commit이 생성된 경우에만 성공 카운트를 올립니다.
+      if (decisionResult.committed) {
+        committedCount += 1;
+        success(`${file} commit completed.`);
+      }
     }
-  }
 
-  // 커밋 횟수 확인
-  // 승인한 커밋이 없으면 안내 메시지 출력
-  // step 모드는 파일별로 커밋을 건너뛸 수 있으므로, 최소 1개 이상 성공했을 때만 push를 후속 실행합니다.
-  await pushAfterSuccessfulCommit({ push: options.push && committedCount > 0 });
+    // 커밋 횟수 확인
+    // 승인한 커밋이 없으면 안내 메시지 출력
+    // step 모드는 파일별로 커밋을 건너뛸 수 있으므로, 최소 1개 이상 성공했을 때만 push를 후속 실행합니다.
+    await pushAfterSuccessfulCommit({ push: options.push && committedCount > 0 });
 
-  if (committedCount === 0) {
-    info("사용자가 승인한 커밋이 없습니다.");
+    if (committedCount === 0) {
+      info("사용자가 승인한 커밋이 없습니다.");
+    }
+  } finally {
+    // localLLM 실패로 임시 provider/API 전환을 했다면 commit/push 예외가 발생해도
+    // 작업 종료 시점에 현재 설정 유지 또는 기존 localLLM 복원 여부를 반드시 확인합니다.
+    await finalizeLocalLLMFallbackConfig(sessionState);
   }
 }
 
@@ -781,30 +987,36 @@ export async function runBatchCommit(options = {}) {
   const sessionState = {
     externalTransmissionApproved: false,
   };
-  // batch 모드는 여러 파일 diff를 하나의 prompt 입력으로 합칩니다.
-  const batchDiff = joinDiffs(fileDiffs);
-  // 다만 staging 대상은 fileDiffs를 통과한 파일 목록으로만 제한합니다.
-  const filesToCommit = fileDiffs.map(({ file }) => file);
-  // batch도 step과 같은 decision flow를 사용해 UX와 보안 정책을 통일합니다.
-  const decisionResult = await runCommitDecisionFlow({
-    diff: batchDiff,
-    fileDiffs,
-    files: filesToCommit,
-    config,
-    mode: "batch",
-    sessionState,
-  });
+  try {
+    // batch 모드에서는 여러 파일 diff를 하나의 prompt 입력으로 합칩니다.
+    const batchDiff = joinDiffs(fileDiffs);
+    // 다만 staging 대상은 민감 파일 필터를 통과한 파일 목록으로 제한합니다.
+    const filesToCommit = fileDiffs.map(({ file }) => file);
+    // batch도 step과 같은 decision flow를 사용해 UX와 보안 정책을 일관되게 유지합니다.
+    const decisionResult = await runCommitDecisionFlow({
+      diff: batchDiff,
+      fileDiffs,
+      files: filesToCommit,
+      config,
+      mode: "batch",
+      sessionState,
+    });
 
-  // provider/model 전환 같은 복구 결과를 push 이전 최신 config로 반영합니다.
-  config = decisionResult.config ?? config;
+    // provider/model 전환 같은 복구 결과를 push 이전 최신 config로 반영합니다.
+    config = decisionResult.config ?? config;
 
-  // 사용자가 Cancel했거나 AI 생성이 중단되면 push도 실행하지 않습니다.
-  if (!decisionResult.committed) {
-    warn("사용자가 batch 커밋을 취소했습니다.");
-    return;
+    // 사용자가 취소하거나 AI 생성이 중단되면 push를 실행하지 않습니다.
+    if (!decisionResult.committed) {
+      warn("사용자가 batch 커밋을 취소했습니다.");
+      return;
+    }
+
+    // commit이 실제로 성공한 뒤에만 push 확인 및 push를 진행합니다.
+    await pushAfterSuccessfulCommit(options);
+    success("Batch commit completed.");
+  } finally {
+    // fallback provider/API를 config.json에 임시 저장한 뒤 commit, push, 사용자 취소,
+    // 전송 거부 중 어느 경로로 끝나더라도 기존 localLLM 복원 여부를 빠뜨리지 않습니다.
+    await finalizeLocalLLMFallbackConfig(sessionState);
   }
-
-  // commit이 실제로 성공한 뒤에만 push 확인 및 push를 진행합니다.
-  await pushAfterSuccessfulCommit(options);
-  success("Batch commit completed.");
 }
