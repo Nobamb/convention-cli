@@ -705,6 +705,297 @@ test('runBatchCommit can switch from exhausted Gemini to localLLM and retry safe
   });
 });
 
+test('runBatchCommit recovers from localLLM failure with another localLLM and restores original config', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    const requestedURLs = [];
+    const requestBodies = [];
+
+    globalThis.fetch = async (url, options = {}) => {
+      requestedURLs.push(String(url));
+
+      if (String(url).endsWith('/models')) {
+        return {
+          ok: true,
+          async json() {
+            return { data: [{ id: 'low-reasoning-local' }] };
+          },
+        };
+      }
+
+      requestBodies.push(JSON.parse(options.body));
+
+      if (requestBodies.length === 1) {
+        throw new Error('fetch failed');
+      }
+
+      return {
+        ok: true,
+        async json() {
+          return {
+            choices: [{ message: { content: 'chore: update project files' } }],
+          };
+        },
+      };
+    };
+
+    prompts.inject(['switchModel', 'localLLM', 'low-reasoning-local', 'fixed', 'restoreOriginal']);
+    saveRuntimeConfig({
+      mode: 'batch',
+      provider: 'localLLM',
+      baseURL: 'http://localhost:11434/v1',
+      modelVersion: 'high-reasoning-local',
+      confirmBeforeCommit: false,
+    });
+    writeFile(repoDir, 'README.md', 'local fallback restore change\n');
+
+    await commands.runBatchCommit();
+
+    assert.equal(requestBodies[0].model, 'high-reasoning-local');
+    assert.equal(requestBodies[1].model, 'low-reasoning-local');
+    assert.equal(requestedURLs.includes('http://localhost:11434/v1/models'), true);
+    assert.equal(store.loadConfig().provider, 'localLLM');
+    assert.equal(store.loadConfig().modelVersion, 'high-reasoning-local');
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: update project files');
+    assert.equal(getStatus(repoDir), '');
+  });
+});
+
+test('runBatchCommit can switch from failed localLLM to OpenAI-compatible API after external confirmation', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    const requestedURLs = [];
+    const promptsSent = [];
+
+    globalThis.fetch = async (url, options = {}) => {
+      requestedURLs.push(String(url));
+
+      if (requestedURLs.length === 1 && String(url).includes('localhost') && String(url).endsWith('/chat/completions')) {
+        throw new Error('localLLM timeout');
+      }
+
+      if (String(url).endsWith('/models')) {
+        return {
+          ok: true,
+          async json() {
+            return { data: [{ id: 'cloud-model' }] };
+          },
+        };
+      }
+
+      const payload = JSON.parse(options.body);
+      promptsSent.push(payload.messages[0].content);
+
+      return {
+        ok: true,
+        async json() {
+          return {
+            choices: [{ message: { content: 'chore: update project files' } }],
+          };
+        },
+      };
+    };
+
+    prompts.inject([
+      'switchModel',
+      'openaiCompatible',
+      'none',
+      true,
+      'cloud-model',
+      'fixed',
+      true,
+      'keepCurrent',
+    ]);
+    saveRuntimeConfig({
+      mode: 'batch',
+      provider: 'localLLM',
+      baseURL: 'http://localhost:11434/v1',
+      modelVersion: 'high-reasoning-local',
+      confirmBeforeCommit: false,
+    });
+    writeFile(repoDir, 'README.md', 'local fallback api change\n');
+
+    await commands.runBatchCommit();
+
+    assert.equal(requestedURLs.includes('http://localhost:11434/v1/chat/completions'), true);
+    assert.equal(requestedURLs.includes('http://localhost:11434/v1/models'), true);
+    assert.equal(promptsSent.length, 1);
+    assert.equal(store.loadConfig().provider, 'openaiCompatible');
+    assert.equal(store.loadConfig().modelVersion, 'cloud-model');
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: update project files');
+  });
+});
+
+test('runStepCommit skips only the failed localLLM file when user chooses skip current', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    const requestBodies = [];
+
+    globalThis.fetch = async (_url, options = {}) => {
+      requestBodies.push(JSON.parse(options.body));
+
+      if (requestBodies.length === 1) {
+        throw new Error('fetch failed for first file');
+      }
+
+      return {
+        ok: true,
+        async json() {
+          return {
+            choices: [{ message: { content: 'chore: update project files' } }],
+          };
+        },
+      };
+    };
+
+    prompts.inject(['skipFile']);
+    saveRuntimeConfig({
+      mode: 'step',
+      provider: 'localLLM',
+      baseURL: 'http://localhost:11434/v1',
+      modelVersion: 'high-reasoning-local',
+      confirmBeforeCommit: false,
+    });
+    writeFile(repoDir, 'README.md', 'skip first local file\n');
+    writeFile(repoDir, 'src/app.js', 'console.log("second file commit");\n');
+
+    await commands.runStepCommit();
+
+    assert.equal(requestBodies.length, 2);
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: update project files');
+    assert.match(getStatus(repoDir), /^ M README\.md/m);
+    assert.equal(getStatus(repoDir).includes('src/app.js'), false);
+  });
+});
+
+test('runStepCommit stops all remaining files when localLLM recovery chooses stop', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    let fetchCount = 0;
+
+    globalThis.fetch = async () => {
+      fetchCount += 1;
+      throw new Error('localLLM cannot process first file');
+    };
+
+    prompts.inject(['stop']);
+    saveRuntimeConfig({
+      mode: 'step',
+      provider: 'localLLM',
+      baseURL: 'http://localhost:11434/v1',
+      modelVersion: 'high-reasoning-local',
+      confirmBeforeCommit: false,
+    });
+    writeFile(repoDir, 'README.md', 'stop first local file\n');
+    writeFile(repoDir, 'src/app.js', 'console.log("must not process");\n');
+
+    await commands.runStepCommit();
+
+    assert.equal(fetchCount, 1);
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: initial commit');
+    assert.match(getStatus(repoDir), /^ M README\.md/m);
+    assert.match(getStatus(repoDir), /^ M src\/app\.js/m);
+  });
+});
+
+test('runBatchCommit restores fallback config even when push fails after localLLM switch', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    const requestBodies = [];
+
+    globalThis.fetch = async (url, options = {}) => {
+      if (String(url).endsWith('/models')) {
+        return {
+          ok: true,
+          async json() {
+            return { data: [{ id: 'low-reasoning-local' }] };
+          },
+        };
+      }
+
+      requestBodies.push(JSON.parse(options.body));
+
+      if (requestBodies.length === 1) {
+        throw new Error('localLLM cannot process full batch');
+      }
+
+      return {
+        ok: true,
+        async json() {
+          return {
+            choices: [{ message: { content: 'chore: update project files' } }],
+          };
+        },
+      };
+    };
+
+    prompts.inject(['switchModel', 'localLLM', 'low-reasoning-local', 'fixed', true, 'restoreOriginal']);
+    saveRuntimeConfig({
+      mode: 'batch',
+      provider: 'localLLM',
+      baseURL: 'http://localhost:11434/v1',
+      modelVersion: 'high-reasoning-local',
+      confirmBeforeCommit: false,
+    });
+    writeFile(repoDir, 'README.md', 'fallback push failure restore\n');
+
+    await assert.rejects(() => commands.runBatchCommit({ push: true }), /push/i);
+
+    assert.equal(requestBodies[0].model, 'high-reasoning-local');
+    assert.equal(requestBodies[1].model, 'low-reasoning-local');
+    assert.equal(store.loadConfig().provider, 'localLLM');
+    assert.equal(store.loadConfig().modelVersion, 'high-reasoning-local');
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: update project files');
+  });
+});
+
+test('runBatchCommit asks to restore fallback config when switched API transmission is rejected', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    let fetchCount = 0;
+
+    globalThis.fetch = async (url) => {
+      fetchCount += 1;
+
+      if (fetchCount === 1) {
+        throw new Error('localLLM timeout before fallback');
+      }
+
+      if (String(url).endsWith('/models')) {
+        return {
+          ok: true,
+          async json() {
+            return { data: [{ id: 'cloud-model' }] };
+          },
+        };
+      }
+
+      throw new Error('external provider should not be called after transmission rejection');
+    };
+
+    prompts.inject([
+      'switchModel',
+      'openaiCompatible',
+      'none',
+      true,
+      'cloud-model',
+      'fixed',
+      false,
+      'restoreOriginal',
+    ]);
+    saveRuntimeConfig({
+      mode: 'batch',
+      provider: 'localLLM',
+      baseURL: 'http://localhost:11434/v1',
+      modelVersion: 'high-reasoning-local',
+      confirmBeforeCommit: false,
+    });
+    writeFile(repoDir, 'README.md', 'fallback rejected restore\n');
+
+    await commands.runBatchCommit();
+
+    assert.equal(fetchCount, 2);
+    assert.equal(store.loadConfig().provider, 'localLLM');
+    assert.equal(store.loadConfig().modelVersion, 'high-reasoning-local');
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: initial commit');
+    assert.match(getStatus(repoDir), /^ M README\.md/m);
+  });
+});
+
 test('runBatchCommit rejects external large diff transmission before chunk summary calls', { skip: skipWithoutGit }, async () => {
   await withRepo(async (repoDir) => {
     let fetchCalled = false;
