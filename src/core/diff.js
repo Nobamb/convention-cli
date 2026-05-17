@@ -105,16 +105,24 @@ function splitLongLine(line, maxChunkCharacters) {
   // 접두사 제거
   const body = prefix ? line.slice(1) : line;
   // 첫 번째 줄의 본문 길이 제한
-  const firstBodyLimit = Math.max(1, maxChunkCharacters - prefix.length);
+  const firstPrefix = prefix.length < maxChunkCharacters ? prefix : "";
+  const firstBodyLimit = Math.max(1, maxChunkCharacters - firstPrefix.length);
   // 접두사 반복 문자열
-  const nextPrefix = prefix ? `${prefix}... ` : "... ";
+  const preferredNextPrefix = prefix ? `${prefix}... ` : "... ";
+  const nextPrefix =
+    preferredNextPrefix.length < maxChunkCharacters
+      ? preferredNextPrefix
+      : prefix.length < maxChunkCharacters
+        ? prefix
+        : "";
   // 이후 줄의 본문 길이 제한
   const nextBodyLimit = Math.max(1, maxChunkCharacters - nextPrefix.length);
   // 분할된 줄들을 담을 배열 생성
   const segments = [];
 
   // 첫 번째 줄 생성
-  segments.push(`${prefix}${body.slice(0, firstBodyLimit)}`);
+  // 긴 한 줄의 첫 조각도 prefix 길이를 포함해 maxChunkCharacters 이하로 유지한다.
+  segments.push(`${firstPrefix}${body.slice(0, firstBodyLimit)}`);
 
   // 나머지 줄 생성
   // 첫 번째 줄 이후부터 나머지 문자열을 순회하며 분할
