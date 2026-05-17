@@ -32,6 +32,117 @@ export function createSpinner(text) {
 }
 
 /**
+ * localLLM이 timeout, fetch failed, 연결 끊김처럼 응답 불능 상태가 되었을 때
+ * 현재 convention 작업을 어떻게 이어갈지 사용자에게 묻습니다.
+ *
+ * diff 원문, prompt 원문, API Key, credential이 포함된 endpoint는 표시하지 않고
+ * 선택 결과만 command layer로 돌려보내 실제 복구 동작을 분리합니다.
+ *
+ * @returns {Promise<string>} 'switchModel', 'skipFile', 'stop' 중 하나
+ */
+export async function selectLocalLLMFailureAction() {
+  // 선택지 생성
+  const choices = [
+    {
+      title: "다른 localLLM 또는 Cloud API Provider로 전환해서 다시 시도",
+      value: "switchModel",
+    },
+    {
+      title: "현재 파일만 건너뛰고 다음 파일 계속 진행",
+      value: "skipFile",
+    },
+    {
+      title: "전체 convention 작업 중단",
+      value: "stop",
+    },
+  ];
+  // prompt를 사용하여 사용자의 선택을 받습니다.
+  const response = await prompts({
+    type: "select",
+    name: "action",
+    message:
+      "localLLM이 현재 diff를 끝까지 처리하지 못했습니다. 어떻게 진행할까요?",
+    choices,
+  });
+
+  // prompt가 취소되면 파일/히스토리를 건드리지 않는 stop으로 처리합니다.
+  return choices.some((choice) => choice.value === response.action)
+    ? response.action
+    : "stop";
+}
+
+/**
+ * localLLM 장애 후 대체 모델/API로 전환했을 때 이번 세션에서 그 설정을
+ * 계속 사용할지, 다음 파일부터 원래 localLLM으로 다시 시도할지 묻습니다.
+ *
+ * fixed는 이후 파일도 대체 모델/API를 사용하고,
+ * temporary는 현재 diff만 대체 모델/API로 처리한 뒤 다음 파일부터 원래 localLLM으로 돌아갑니다.
+ *
+ * @returns {Promise<string>} 'fixed' 또는 'temporary'
+ */
+export async function selectLocalLLMFallbackPolicy() {
+  // 선택지 생성
+  const choices = [
+    {
+      title: "이번 세션의 이후 파일에도 대체 모델/API 계속 사용",
+      value: "fixed",
+    },
+    {
+      title: "현재 diff만 처리하고 다음 파일부터 원래 localLLM 다시 시도",
+      value: "temporary",
+    },
+  ];
+  // prompt를 사용하여 사용자의 선택을 받습니다.
+  const response = await prompts({
+    type: "select",
+    name: "policy",
+    message: "전환한 모델/API를 이번 convention 세션에서 어떻게 사용할까요?",
+    choices,
+  });
+
+  // 취소 시에는 반복 장애를 줄이기 위해 이번 세션 동안 대체 모델/API를 유지합니다.
+  return choices.some((choice) => choice.value === response.policy)
+    ? response.policy
+    : "fixed";
+}
+
+/**
+ * convention 작업이 끝난 뒤, localLLM 장애 복구 과정에서 저장된 provider 설정을
+ * 그대로 둘지 원래 localLLM 설정으로 복원할지 묻습니다.
+ *
+ * 실제 config 저장은 command layer가 수행합니다. 이 함수는 사용자 의사만 반환해
+ * UI 계층이 config.json이나 credentials.json을 직접 만지지 않게 합니다.
+ *
+ * @returns {Promise<string>} 'keepCurrent' 또는 'restoreOriginal'
+ */
+export async function selectPostFallbackConfigAction() {
+  // 선택지 생성
+  const choices = [
+    {
+      title: "현재 설정 유지",
+      value: "keepCurrent",
+    },
+    {
+      title: "이전에 사용하던 localLLM 설정으로 복원",
+      value: "restoreOriginal",
+    },
+  ];
+  // prompt를 사용하여 사용자의 선택을 받습니다.
+  const response = await prompts({
+    type: "select",
+    name: "action",
+    message:
+      "convention 작업이 끝났습니다. 장애 복구 중 전환한 모델/API 설정을 유지할까요?",
+    choices,
+  });
+
+  // 취소 시에는 사용자가 방금 선택해 작업을 마친 현재 설정을 보존합니다.
+  return choices.some((choice) => choice.value === response.action)
+    ? response.action
+    : "keepCurrent";
+}
+
+/**
  * 커밋 메시지 생성 후 커밋 여부 확인
  * @param {string} message 커밋 메시지
  * @param {object} options 옵션
