@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { DEFAULT_CONFIG } from "../src/config/defaults.js";
 import {
   chunkDiff,
   detectLargeDiff,
@@ -73,8 +74,8 @@ test("detectLargeDiff deep merges partial threshold overrides", () => {
   });
 
   assert.equal(result.threshold.maxCharacters, 5);
-  assert.equal(result.threshold.maxFiles, 30);
-  assert.equal(result.threshold.maxLines, 1200);
+  assert.equal(result.threshold.maxFiles, DEFAULT_CONFIG.largeDiffThreshold.maxFiles);
+  assert.equal(result.threshold.maxLines, DEFAULT_CONFIG.largeDiffThreshold.maxLines);
   assert.equal(result.isLarge, true);
 });
 
@@ -130,6 +131,44 @@ test("chunkDiff splits a single very long line by character limit", () => {
   assert.equal(chunks.every((chunk) => chunk.characterCount <= 40), true);
   assert.equal(chunks[0].diff.startsWith("+"), true);
   assert.equal(chunks[1].diff.startsWith("+... "), true);
+});
+
+test("chunkDiff keeps long-line continuation chunks under tiny character limits", () => {
+  const chunks = chunkDiff(
+    [
+      {
+        file: "dist/minified.js",
+        diff: `+${"x".repeat(20)}`,
+      },
+    ],
+    { maxChunkLines: 50, maxChunkCharacters: 4 },
+  );
+
+  // continuation marker("+... ")가 maxChunkCharacters보다 긴 극단값에서도
+  // 더 짧은 marker로 낮춰 provider에 전달되는 chunk 크기 제한을 지킨다.
+  assert.equal(chunks.length > 1, true);
+  assert.equal(chunks.every((chunk) => chunk.characterCount <= 4), true);
+  assert.equal(chunks.every((chunk) => chunk.diff.length <= 4), true);
+});
+
+test("chunk summary prompts never receive the full oversized source line", () => {
+  const rawLine = `+${"x".repeat(120)}`;
+  const chunks = chunkDiff(
+    [
+      {
+        file: "dist/generated.js",
+        diff: rawLine,
+      },
+    ],
+    { maxChunkLines: 50, maxChunkCharacters: 40 },
+  );
+  const prompts = chunks.map((chunk) => buildChunkSummaryPrompt({ chunk, language: "ko" }));
+
+  // prompt builder는 chunk.diff를 그대로 넣으므로, 여기서 원본 초장문 line이 보이면
+  // large diff 방어선이 깨져 외부 provider에 과도한 raw diff가 전송될 수 있다.
+  assert.equal(chunks.every((chunk) => chunk.characterCount <= 40), true);
+  assert.equal(prompts.some((prompt) => prompt.includes(rawLine)), false);
+  assert.equal(prompts.every((prompt) => prompt.includes("Git diff chunk:")), true);
 });
 
 test("chunkDiff removes empty chunks and validates top-level input", () => {
