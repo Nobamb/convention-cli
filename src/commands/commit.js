@@ -15,10 +15,17 @@ import {
   push,
 } from "../core/git.js";
 import { maskSensitiveDiff } from "../core/security.js";
+import {
+  classifyChangedFiles,
+  groupFilesByIntent,
+} from "../core/grouping.js";
 import { isUsageExhaustedError } from "../providers/errors.js";
 import { error, info, success, warn } from "../utils/logger.js";
 import {
   COMMIT_DECISIONS,
+  GROUPING_DECISIONS,
+  previewGrouping,
+  selectGroupingDecision,
   confirmAction,
   confirmExternalAITransmission,
   previewCommitMessage,
@@ -662,6 +669,167 @@ async function pushAfterSuccessfulCommit(options = {}) {
   push();
 }
 
+// 단계별 기본 fallback 의도들
+const GROUP_FALLBACK_INTENTS = new Set([
+  "feat",
+  "fix",
+  "refactor",
+  "docs",
+  "style",
+  "test",
+  "chore",
+]);
+
+/**
+ * fileType 계약을 command 계층에서 정규화합니다.
+ *
+ * 현재 core/grouping.js 구현은 일부 환경에서 category를 반환할 수 있으므로,
+ * 여기서는 fileType을 기준 계약으로 삼고 기존 grouping helper 호환을 위해 category만 보조로 채웁니다.
+ */
+function normalizeFileClassification(classification = {}) {
+  // category fallback 
+  const fileType = classification.fileType || classification.category || "unknown";
+
+  // category를 fileType으로 보정
+  return {
+    ...classification,
+    fileType,
+    category: fileType,
+  };
+}
+
+/**
+ * 외부 AI를 호출하지 않는 규칙 기반 intent fallback입니다.
+ *
+ * grouped preview 전에 파일별 AI 의도 분석을 수행하면 외부 전송 confirm gate를 우회할 수 있으므로,
+ * 그룹 제안 단계에서는 로컬 규칙만 사용합니다. 실제 commit message 생성은 runCommitDecisionFlow 안에서
+ * 기존 외부 AI 전송 확인과 preview/confirm gate를 그대로 거칩니다.
+ */
+function inferGroupedIntentByRules({ fileType, diff = "" }) {
+  // docs, test, style, dependency, config, generated, unknown 파일은 각각 docs, test, style, chore로 추론합니다.
+  if (fileType === "docs") return "docs";
+  if (fileType === "test") return "test";
+  if (fileType === "style") return "style";
+  if (["dependency", "config", "generated", "unknown"].includes(fileType)) {
+    return "chore";
+  }
+
+  // diff가 문자열이라면 소문자로 변환
+  const lowerDiff = typeof diff === "string" ? diff.toLowerCase() : "";
+
+  // diff에 fix, bug, error, exception, fail, failure, regression 키워드가 포함되어 있다면 fix로 추론
+  if (/\b(fix|bug|error|exception|fail|failure|regression)\b/.test(lowerDiff)) {
+    return "fix";
+  }
+
+  // diff에 export, new command, new option, add, added, create, created 키워드가 포함되어 있다면 feat로 추론
+  if (/\b(export|new command|new option|add|added|create|created)\b/.test(lowerDiff)) {
+    return "feat";
+  }
+
+  // diff에 refactor, rename, move, split, extract, cleanup, restructure 키워드가 포함되어 있다면 refactor로 추론
+  if (/\b(refactor|rename|move|split|extract|cleanup|restructure)\b/.test(lowerDiff)) {
+    return "refactor";
+  }
+
+  // 위 조건에 모두 해당하지 않으면 chore로 추론
+  return "chore";
+}
+
+/**
+ * 그룹 생성 전용 metadata를 만듭니다.
+ *
+ * 이 단계에서는 diff 원문을 출력하지 않고, provider도 호출하지 않습니다. diff는 로컬 규칙 판정에만 사용하고
+ * 반환 metadata에는 포함하지 않아 preview 출력 경로로 원문이 흘러가지 않게 합니다.
+ */
+function buildRuleBasedGroupingItems(fileDiffs) {
+  // 파일들의 경로를 기반으로 카테고리를 분류합니다.
+  const classifications = classifyChangedFiles(fileDiffs.map(({ file }) => file));
+  // 파일별 카테고리를 Map 형태로 변환합니다.
+  const classificationByFile = new Map(
+    classifications.map((classification) => [
+      classification.file,
+      normalizeFileClassification(classification),
+    ]),
+  );
+
+  // fileDiffs를 순회하면서
+  return fileDiffs.map(({ file, diff }) => {
+    // 파일별 카테고리를 가져옵니다.
+    const classification = normalizeFileClassification(
+      classificationByFile.get(file) ?? { file, fileType: "unknown" },
+    );
+    // 파일의 카테고리와 diff를 기반으로 의도를 추론합니다.
+    const intent = inferGroupedIntentByRules({
+      fileType: classification.fileType,
+      diff,
+    });
+
+    // 규칙 기반으로 파일에 대한 metadata를 만듭니다.
+    return {
+      file,
+      fileType: classification.fileType,
+      category: classification.fileType,
+      intent: GROUP_FALLBACK_INTENTS.has(intent) ? intent : "chore",
+      summary: `규칙 기반 ${classification.fileType} 변경`,
+      confidence: "low",
+      source: "rule",
+    };
+  });
+}
+
+/**
+ * preview와 commit flow 사이에서 그룹 파일 구성이 정확한지 확인합니다.
+ *
+ * 중복 파일이나 누락 파일이 있으면 어떤 그룹도 commit하지 않습니다. 그룹 커밋은 여러 commit을 순차로 만들 수
+ * 있으므로 시작 전에 대상 파일 집합을 확정해 두는 것이 안전합니다.
+ */
+function validateGroupedCommitPlan(groups, expectedFiles) {
+  // 배열 상에 groups가 포함되어있지 않거나 groups의 개수가 0개라면 빈 배열이므로 valid 리턴
+  if (!Array.isArray(groups) || groups.length === 0) {
+    return { valid: false, reason: "empty" };
+  }
+
+  // 배열 상에 expectedFiles가 포함되어있지 않다면 expected에 expectedFiles를 추가
+  const expected = new Set(expectedFiles);
+  // seen은 배열 상에 groups에 포함되어있는 파일들의 개수를 추적합니다.
+  const seen = new Set();
+
+  // 그룹들의 파일들을 순회하면서
+  for (const group of groups) {
+    // 그룹 상에 group.files가 포함되어있지 않거나 group.files의 개수가 0개라면 빈 배열이므로 valid 리턴
+    if (!Array.isArray(group.files) || group.files.length === 0) {
+      return { valid: false, reason: "emptyGroup", groupName: group.groupName };
+    }
+
+    // 그룹의 파일들을 순회하면서
+    for (const file of group.files) {
+      // 예상 파일에 포함되지 않은 파일이 있다면 valid 리턴
+      if (!expected.has(file)) {
+        return { valid: false, reason: "unexpectedFile", file };
+      }
+
+      // seen에 파일이 포함되어있다면 중복된 파일이므로 valid 리턴
+      if (seen.has(file)) {
+        return { valid: false, reason: "duplicateFile", file };
+      }
+      // seen에 파일 추가
+      seen.add(file);
+    }
+  }
+
+  // 예상 파일의 파일들을 순회하면서
+  for (const file of expected) {
+    // seen에 파일이 포함되어있지 않다면 누락된 파일이므로 valid 리턴
+    if (!seen.has(file)) {
+      return { valid: false, reason: "missingFile", file };
+    }
+  }
+
+  // 유효성 검증 통과
+  return { valid: true };
+}
+
 /**
  * 하나의 diff를 기준으로 AI commit message를 만들고 git commit에 넣기 좋은 문자열로 정리합니다.
  *
@@ -775,6 +943,7 @@ async function createCommitMessageWithRecovery({
           "localLLM이 현재 diff를 처리하지 못했습니다. 다른 localLLM 또는 API 사용 여부를 확인합니다.",
         );
 
+        // 복구 로직
         const localRecovery = await recoverFromLocalLLMFailure(currentConfig, sessionState);
 
         // 파일 건너뛰기
@@ -848,7 +1017,9 @@ async function createCommitMessageWithRecovery({
  * Git diff 추출, 사용자 confirm, staging, commit은 각각 `runStepCommit()` 또는 `runBatchCommit()`에 위임합니다.
  */
 export async function runDefaultCommit(options = {}) {
+  // 현재 config 로드
   const config = loadRuntimeConfig();
+  // mode 유효성 검증, 유효하지 않은 mode는 기본값인 step으로 되돌립니다.
   const mode = isValidMode(config.mode) ? config.mode : DEFAULT_CONFIG.mode;
 
   // batch 모드이면 batch commit 실행
@@ -1017,6 +1188,140 @@ export async function runBatchCommit(options = {}) {
   } finally {
     // fallback provider/API를 config.json에 임시 저장한 뒤 commit, push, 사용자 취소,
     // 전송 거부 중 어느 경로로 끝나더라도 기존 localLLM 복원 여부를 빠뜨리지 않습니다.
+    await finalizeLocalLLMFallbackConfig(sessionState);
+  }
+}
+
+/**
+ * 변경된 파일들을 의도별로 그룹화하여 커밋합니다.
+ */
+export async function runGroupedCommit(options = {}) {
+  // Git 저장소인지 확인
+  if (!isGitRepository()) {
+    error("Git 저장소 안에서 실행해야 합니다.");
+    return;
+  }
+
+  // 설정 파일 읽기
+  let config = loadRuntimeConfig();
+
+  // 변경된 파일 목록과 diff 추출
+  const { changedFiles, fileDiffs } = collectCommittableFileDiffs();
+
+  if (changedFiles.length === 0 || fileDiffs.length === 0) {
+    info("커밋할 변경사항이 없습니다.");
+    return;
+  }
+
+  // 파일 카테고리 분류
+  const groupingItems = buildRuleBasedGroupingItems(fileDiffs);
+  // 그룹 제안 단계에서는 외부 AI를 호출하지 않습니다.
+  // per-file intent AI 분석은 외부 전송 확인 gate를 우회할 수 있으므로 fileType 계약과 로컬 규칙 fallback만 사용합니다.
+
+  // 파일들을 그룹화
+  const groups = groupFilesByIntent(groupingItems);
+
+  // 그룹화된 파일이 없으면 종료
+  if (groups.length === 0) {
+    warn("그룹화된 파일이 없습니다. Git 작업 없이 종료합니다.");
+    return;
+  }
+
+  // 그룹 미리보기 및 사용자 확인
+  const filesToGroup = fileDiffs.map(({ file }) => file);
+  const validation = validateGroupedCommitPlan(groups, filesToGroup);
+
+  // 그룹 구성 유효성 검증, 유효하지 않은 경우 종료
+  if (!validation.valid) {
+    warn("그룹 파일 구성이 유효하지 않아 Git 작업 없이 종료합니다.");
+    return;
+  }
+
+  // 그룹 미리보기
+  previewGrouping(groups);
+  // 그룹 결정
+  const decision = await selectGroupingDecision();
+
+  // 그룹 커밋 취소 시 종료
+  if (decision === GROUPING_DECISIONS.CANCEL) {
+    warn("그룹 커밋이 취소되었습니다.");
+    return;
+  }
+
+  // batch 커밋 선택 시 batch commit 실행
+  if (decision === GROUPING_DECISIONS.BATCH) {
+    info("batch 커밋으로 진행합니다.");
+    return runBatchCommit(options);
+  }
+
+  // 수정 선택 시 수정은 아직 지원되지 않음
+  if (decision === GROUPING_DECISIONS.EDIT) {
+    info("수동 수정은 아직 지원되지 않습니다. batch 커밋으로 진행합니다.");
+    return runBatchCommit(options);
+  }
+
+  // 커밋 카운트 초기화
+  let committedCount = 0;
+  // 외부 전송 승인 상태 초기화
+  const sessionState = {
+    externalTransmissionApproved: false,
+  };
+
+  // 그룹별 파일 커밋
+  try {
+    // 그룹 반복 처리
+    for (const group of groups) {
+      // 그룹에 속한 파일들의 diff 추출
+      const groupFileDiffs = fileDiffs.filter(f => group.files.includes(f.file));
+      // 그룹 diff 조인
+      const groupDiff = joinDiffs(groupFileDiffs);
+      // 그룹 파일 목록
+      const groupFiles = groupFileDiffs.map(({ file }) => file);
+
+      // 커밋 가능한 diff가 없으면 다음 그룹으로
+      if (groupFileDiffs.length === 0) {
+        warn(`Group ${group.groupName}에 커밋 가능한 diff가 없어 건너뜁니다.`);
+        continue;
+      }
+
+      // 그룹별 파일만 기존 batch prompt/confirm flow에 전달합니다.
+      // 그룹 preview의 Yes는 구성 승인일 뿐이며, 실제 commit은 아래 decision flow의 메시지 preview와 confirm 이후에만 수행됩니다.
+      const decisionResult = await runCommitDecisionFlow({
+        diff: groupDiff,
+        fileDiffs: groupFileDiffs,
+        files: groupFiles,
+        file: `Group: ${group.groupName}`,
+        transmissionOptions: { file: `Group: ${group.groupName}` },
+        config,
+        mode: "batch",
+        sessionState,
+      });
+
+      // 최신 config로 업데이트
+      config = decisionResult.config ?? config;
+
+      // stop이면 루프 탈출
+      if (decisionResult.stopped) {
+        break;
+      }
+
+      // commit 되었다면 커밋 카운트 증가
+      if (decisionResult.committed) {
+        committedCount += 1;
+        success(`Group ${group.groupName} commit completed.`);
+      }
+    }
+
+    // 커밋이 성공한 경우에만 push 확인 및 push 수행
+    await pushAfterSuccessfulCommit({ push: options.push && committedCount > 0 });
+
+    // commit count가 없다면 사용자에게 커밋이 없음을 알림
+    if (committedCount === 0) {
+      info("사용자가 승인한 커밋이 없습니다.");
+    }
+    // fallback provider/API를 config.json에 임시 저장한 뒤 commit, push, 사용자 취소,
+    // 전송 거부 중 어느 경로로 끝나더라도 기존 localLLM 복원 여부를 빠뜨리지 않습니다.
+  } finally {
     await finalizeLocalLLMFallbackConfig(sessionState);
   }
 }
