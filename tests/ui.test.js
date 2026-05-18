@@ -4,9 +4,12 @@ import prompts from 'prompts';
 
 import {
   COMMIT_DECISIONS,
+  GROUPING_DECISIONS,
   previewCommitMessage,
+  previewGrouping,
   promptCommitMessageEdit,
   selectCommitDecision,
+  selectGroupingDecision,
 } from '../src/utils/ui.js';
 
 let originalLog;
@@ -89,4 +92,44 @@ test('promptCommitMessageEdit returns null for blank input', async () => {
   assert.equal(await promptCommitMessageEdit(''), null);
   assert.equal(warnCalls.length, 1);
   assert.match(warnCalls[0], /Commit message edit was empty/);
+});
+
+test('previewGrouping prints only group metadata and file names', () => {
+  previewGrouping([
+    {
+      type: 'feat',
+      groupName: 'grouping-flow',
+      files: ['src/core/grouping.js', { file: 'docs/API_KEY=secret.md' }],
+      summary: 'diff --git should not be printed',
+    },
+  ]);
+
+  const output = logCalls.join('\n');
+
+  assert.match(output, /그룹 커밋 미리보기/);
+  assert.match(output, /feat \/ grouping-flow/);
+  assert.match(output, /src\/core\/grouping\.js/);
+  assert.match(output, /docs\/API_KEY=\[REDACTED\]/);
+  assert.doesNotMatch(output, /diff --git|secret\.md/);
+});
+
+test('selectGroupingDecision returns stable enum values', async () => {
+  prompts.inject([
+    GROUPING_DECISIONS.YES,
+    GROUPING_DECISIONS.EDIT,
+    GROUPING_DECISIONS.BATCH,
+    GROUPING_DECISIONS.CANCEL,
+  ]);
+
+  assert.equal(await selectGroupingDecision(), GROUPING_DECISIONS.YES);
+  assert.equal(await selectGroupingDecision(), GROUPING_DECISIONS.EDIT);
+  assert.equal(await selectGroupingDecision(), GROUPING_DECISIONS.BATCH);
+  assert.equal(await selectGroupingDecision(), GROUPING_DECISIONS.CANCEL);
+});
+
+test('selectGroupingDecision treats canceled or invalid prompt response as cancel', async () => {
+  prompts.inject([undefined, 'not-a-grouping-decision']);
+
+  assert.equal(await selectGroupingDecision(), GROUPING_DECISIONS.CANCEL);
+  assert.equal(await selectGroupingDecision(), GROUPING_DECISIONS.CANCEL);
 });
