@@ -1,7 +1,15 @@
 import { SUPPORTED_LANGUAGES, SUPPORTED_MODES } from "../config/defaults.js";
 
 // Conventional Commits 타입
-const ALLOWED_TYPES = ["feat", "fix", "refactor", "docs", "style", "test", "chore"];
+const ALLOWED_TYPES = [
+  "feat",
+  "fix",
+  "refactor",
+  "docs",
+  "style",
+  "test",
+  "chore",
+];
 
 // Conventional Commits 타입에 대한 언어별 지시사항
 const LANGUAGE_INSTRUCTIONS = {
@@ -14,21 +22,22 @@ const LANGUAGE_INSTRUCTIONS = {
 // Conventional Commits 타입에 대한 모드별 지시사항
 const MODE_INSTRUCTIONS = {
   step: "The diff represents a single file or one file-level change. Make the subject specific to that file-level change.",
-  batch: "The diff represents the whole working tree change. Summarize the complete change as one commit subject.",
+  batch:
+    "The diff represents the whole working tree change. Summarize the complete change as one commit subject.",
 };
 
 /**
  * @description 언어 안전 설정
- * @param {string} language 
- * @returns {string} 
+ * @param {string} language
+ * @returns {string}
  */
 function getSafeLanguage(language) {
   return SUPPORTED_LANGUAGES.includes(language) ? language : "ko";
 }
 /**
  * @description 모드 안전 설정
- * @param {string} mode 
- * @returns {string} 
+ * @param {string} mode
+ * @returns {string}
  */
 function getSafeMode(mode) {
   return SUPPORTED_MODES.includes(mode) ? mode : "step";
@@ -36,12 +45,15 @@ function getSafeMode(mode) {
 
 /**
  * @description 재생성 지시사항 생성
- * @param {string} previousMessage 
- * @returns {string[]} 
+ * @param {string} previousMessage
+ * @returns {string[]}
  */
 function buildRegenerationInstructions(previousMessage) {
   // 이전 메시지가 유효하지 않은 경우 빈 배열 반환
-  if (typeof previousMessage !== "string" || previousMessage.trim().length === 0) {
+  if (
+    typeof previousMessage !== "string" ||
+    previousMessage.trim().length === 0
+  ) {
     return [];
   }
 
@@ -75,7 +87,8 @@ export function buildCommitPrompt({
   // 모드 안전 설정
   const safeMode = getSafeMode(mode);
   // 재생성 지시사항 생성
-  const regenerationInstructions = buildRegenerationInstructions(previousMessage);
+  const regenerationInstructions =
+    buildRegenerationInstructions(previousMessage);
 
   // 프롬프트 생성
   return [
@@ -106,7 +119,11 @@ export function buildCommitPrompt({
  */
 export function buildChunkSummaryPrompt({ chunk, language = "ko" } = {}) {
   // chunk 유효성 검증
-  if (!chunk || typeof chunk.diff !== "string" || chunk.diff.trim().length === 0) {
+  if (
+    !chunk ||
+    typeof chunk.diff !== "string" ||
+    chunk.diff.trim().length === 0
+  ) {
     throw new TypeError("chunk.diff must be a non-empty string");
   }
 
@@ -160,7 +177,8 @@ export function buildSummaryCommitPrompt({
   // 모드 안전 설정
   const safeMode = getSafeMode(mode);
   // 재생성 지시사항 생성
-  const regenerationInstructions = buildRegenerationInstructions(previousMessage);
+  const regenerationInstructions =
+    buildRegenerationInstructions(previousMessage);
 
   // 프롬프트 생성
   return [
@@ -183,6 +201,97 @@ export function buildSummaryCommitPrompt({
     ...regenerationInstructions,
     "",
     "Merged change summary:",
+    summary,
+  ].join("\n");
+}
+
+/**
+ * 파일의 변경 의도를 분석하기 위한 프롬프트를 생성합니다.
+ * @param {*} file - 파일 경로
+ * @param {*} diff - diff 데이터
+ * @param {*} language - 언어
+ * @param {*} classification - classification 데이터
+ * @returns {string[]} - 프롬프트 데이터
+ */
+export function buildIntentPrompt({
+  file,
+  diff,
+  language = "ko",
+  classification,
+} = {}) {
+  // AI 의도 분석을 명시적으로 켠 경우에만 이 prompt가 사용됩니다.
+  const safeLanguage = getSafeLanguage(language);
+  // 파일 타입 안전 설정
+  const fileType =
+    // classification.fileType이 string이고 길이가 0보다 크면 해당 값을 사용,
+    // 아니면 unknown 사용
+    typeof classification?.fileType === "string" &&
+    classification.fileType.trim().length > 0
+      ? classification.fileType.trim()
+      : "unknown";
+  // 프롬프트 생성
+  return [
+    "You are analyzing a Git diff to determine the intent of the change.",
+    "",
+    "Based on the diff below, determine the conventional commit type (intent) and a short summary.",
+    "Return the result EXACTLY in the following format:",
+    "intent: <feat|fix|refactor|docs|test|chore|style>",
+    "summary: <short summary in the configured language>",
+    LANGUAGE_INSTRUCTIONS[safeLanguage],
+    "",
+    `File: ${file}`,
+    `File type: ${fileType}`,
+    "",
+    "Git diff:",
+    diff,
+  ].join("\n");
+}
+
+/**
+ * 그룹별 커밋 메시지 프롬프트를 생성합니다.
+ *
+ * @param {*} groupName - 그룹 이름
+ * @param {*} type - 커밋 타입
+ * @param {*} files - 파일 목록
+ * @param {*} summary - 변경 요약
+ * @param {*} language - 언어
+ * @param {*} previousMessage - 이전 메시지
+ * @returns {string[]} - 프롬프트 데이터
+ */
+export function buildGroupCommitPrompt({
+  groupName,
+  type,
+  files,
+  summary,
+  language = "ko",
+  previousMessage,
+} = {}) {
+  // 언어 안전 설정
+  const safeLanguage = getSafeLanguage(language);
+  // 재생성 지시사항 생성
+  const regenerationInstructions =
+    buildRegenerationInstructions(previousMessage);
+  // 프롬프트 생성
+  return [
+    "You are generating a Git commit message for a specific group of changed files.",
+    "",
+    "Return only one final commit message.",
+    "Do not return explanations, alternatives, markdown, code fences, or surrounding quotes.",
+    "",
+    "Use the Conventional Commits format:",
+    "<type>: <subject>",
+    "",
+    `The determined type for this group is: ${type}`,
+    "Use this type or a more accurate one from the allowed list if strictly necessary.",
+    `Allowed types: ${ALLOWED_TYPES.join(", ")}`,
+    LANGUAGE_INSTRUCTIONS[safeLanguage],
+    "",
+    `Group Name: ${groupName}`,
+    `Files in this group: ${files.join(", ")}`,
+    "Keep the message concise and suitable for git commit -m.",
+    ...regenerationInstructions,
+    "",
+    "Change summary for this group:",
     summary,
   ].join("\n");
 }
