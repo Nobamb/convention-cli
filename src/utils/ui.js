@@ -486,7 +486,7 @@ export function buildExternalAITransmissionMessage({
       : "";
   // 추가 경고 메시지
   const customWarning = warning ? `\n\n  ${chalk.bold.red(warning)}\n\n  ` : "";
-  
+
   // 외부 AI 전송 메시지 반환
   return `${customWarning}Send ${target} to external AI provider "${providerName}"?${endpointText}${httpWarning}`;
 }
@@ -732,4 +732,123 @@ export async function selectAuthType(authTypes) {
   }
 
   return response.authType;
+}
+// Phase 3 grouped commit preview 이후 command layer가 처리할 안정적인 선택 값입니다.
+export const GROUPING_DECISIONS = Object.freeze({
+  YES: "yes",
+  EDIT: "edit",
+  BATCH: "batch",
+  CANCEL: "cancel",
+});
+
+/**
+ * 안전하게 파일명 가져오기
+ * @param {*} file - 파일
+ * @returns {string|null} - 파일명
+ */
+function getSafeGroupFileLabel(file) {
+  // 그룹 preview는 diff 원문을 보여주지 않고 파일명 metadata만 안전하게 표시합니다.
+  if (typeof file === "string") {
+    return file;
+  }
+
+  // file이 string이 아니고 object이면 path, file, name 중 하나를 반환
+  if (file && typeof file === "object") {
+    return file.path || file.file || file.name || null;
+  }
+
+  // 기본값 반환
+  return null;
+}
+
+/**
+ * AI가 제안한 그룹을 diff 원문 없이 미리 보여줍니다.
+ * 파일명과 그룹 메타데이터만 출력하고 diff/prompt/content 필드는 사용하지 않습니다.
+ *
+ * @param {Array<{type?: string, groupName?: string, files?: Array<string|object>}>} groups
+ */
+export function previewGrouping(groups) {
+  // 그룹이 배열이 아니고 길이가 0보다 크면 경고 표시
+  if (!Array.isArray(groups) || groups.length === 0) {
+    warn("표시할 그룹 제안이 없습니다.");
+    return;
+  }
+
+  // 그룹 커밋 미리보기 알림
+  info("그룹 커밋 미리보기");
+
+  // 각 그룹에 대해 순회
+  groups.forEach((group, index) => {
+    // 타입이 문자열 형태면 type 그대로
+    // 문자열이 아니면 "unknown"으로 설정
+    const type = typeof group?.type === "string" ? group.type : "unknown";
+    // 그룹 이름이 문자열 형태면 groupName 그대로
+    // 공백만 있다면 Group + index 로 대체
+    // 문자열이 아니면 "unknown"으로 설정
+    const groupName =
+      typeof group?.groupName === "string" && group.groupName.trim().length > 0
+        ? group.groupName.trim()
+        : `Group ${index + 1}`;
+    // 파일이 배열 형태이면
+    // 안전하게 파일명 가져오기를 시도
+    // 성공한 것만 필터링
+    // 기본값은 빈 배열
+    const files = Array.isArray(group?.files)
+      ? group.files.map(getSafeGroupFileLabel).filter(Boolean)
+      : [];
+
+    // 그룹 타입/그룹 이름 출력
+    info(`Group ${index + 1}: ${type} / ${groupName}`);
+
+    // 파일이 없으면 "files: none" 출력
+    if (files.length === 0) {
+      info("  - files: none");
+      return;
+    }
+
+    // 파일 리스트 출력
+    files.forEach((file) => {
+      info(`  - ${file}`);
+    });
+  });
+}
+
+/**
+ * 그룹 제안 확인 후 사용자의 다음 동작을 선택합니다.
+ * 취소나 예외는 안전하게 cancel로 처리합니다.
+ *
+ * @returns {Promise<string>} GROUPING_DECISIONS 값 중 하나
+ */
+export async function selectGroupingDecision() {
+  try {
+    // 그룹 제안 확인 후 사용자의 다음 동작을 선택
+    const response = await prompts(
+      // 질문
+      {
+        type: "select",
+        name: "decision",
+        message: "AI가 제안한 그룹으로 진행할까요?",
+        choices: [
+          { title: "그룹별 커밋 진행", value: GROUPING_DECISIONS.YES },
+          { title: "수동 편집", value: GROUPING_DECISIONS.EDIT },
+          { title: "batch 커밋으로 진행", value: GROUPING_DECISIONS.BATCH },
+          { title: "취소", value: GROUPING_DECISIONS.CANCEL },
+        ],
+        initial: 0,
+      },
+      // 취소나 예외는 안전하게 cancel로 처리
+      {
+        onCancel: () => false,
+      },
+    );
+
+    // 응답이 GROUPING_DECISIONS에 포함되면 반환
+    // 포함되지 않으면 cancel 반환
+    return Object.values(GROUPING_DECISIONS).includes(response?.decision)
+      ? response.decision
+      : GROUPING_DECISIONS.CANCEL;
+  } catch {
+    // 취소나 예외는 안전하게 cancel로 처리
+    return GROUPING_DECISIONS.CANCEL;
+  }
 }
