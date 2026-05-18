@@ -31,6 +31,15 @@ test('CLI help includes reset option', () => {
   assert.match(output, /working tree/);
 });
 
+test('CLI help includes group option', () => {
+  const output = execFileSync(process.execPath, ['bin/convention.js', '--help'], {
+    encoding: 'utf8',
+  });
+
+  assert.match(output, /--group/);
+  assert.match(output, /그룹화/);
+});
+
 test('CLI routes reset before commit and push flows', () => {
   const source = fs.readFileSync('bin/convention.js', 'utf8');
   const resetIndex = source.indexOf('if (options.reset)');
@@ -44,6 +53,18 @@ test('CLI routes reset before commit and push flows', () => {
   assert.equal(resetIndex < batchIndex, true);
   assert.equal(resetIndex < defaultCommitIndex, true);
 });
+
+test('CLI routes group option to grouped commit flow', () => {
+  const source = fs.readFileSync('bin/convention.js', 'utf8');
+  const groupIndex = source.indexOf('if (options.group)');
+  const defaultCommitIndex = source.indexOf('runDefaultCommit({ push: options.push })');
+
+  assert.match(source, /runGroupedCommit/);
+  assert.notEqual(groupIndex, -1);
+  assert.equal(groupIndex < defaultCommitIndex, true);
+  assert.match(source, /options\.step, options\.batch, options\.group/);
+});
+
 
 test('CLI top-level catch delegates error output to logger', () => {
   const source = fs.readFileSync('bin/convention.js', 'utf8');
