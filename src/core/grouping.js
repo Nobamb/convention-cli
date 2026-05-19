@@ -461,14 +461,6 @@ async function hasExternalTransmissionApproval({
   options,
   masked,
 }) {
-  // 외부 전송 승인 여부를 확인
-  if (
-    options.externalTransmissionApproved === true ||
-    config.externalTransmissionApproved === true
-  ) {
-    return true;
-  }
-
   // 외부 전송 승인 여부를 확인 callback 함수 설정 확인
   const callback =
     options.confirmExternalTransmission ?? config.confirmExternalTransmission;
