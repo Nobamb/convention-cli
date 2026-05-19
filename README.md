@@ -22,6 +22,7 @@ Writing meaningful and consistent commit messages can be tedious. Convention CLI
 - **Workflow Automation**:
   - `convention`: Runs the default commit flow.
   - `--set-mode`: Stores the default commit mode.
+- **Custom Templates**: Manage custom commit message templates using `--template`.
 - **Multilingual Support**: Generate commit messages in your preferred language using `--language`. Supported languages include Korean (`ko`, default), English (`en`), Japanese (`jp`), and Chinese (`cn`).
 - **Cross-Platform**: Fully supported on Windows, macOS, and Linux.
 
@@ -95,6 +96,10 @@ convention --model
 convention --model gemini api
 convention --model openaiCompatible api "gpt-compatible"
 convention --model localLLM none "qwen2.5:7b"
+
+# Manage custom commit templates (action: init, show, validate)
+convention --template
+convention --template init
 ```
 
 ### API Key and 429 Recovery
@@ -119,6 +124,7 @@ Convention CLI는 Git 변경 사항을 분석해 Conventional Commits 형식의 
 - **Group 모드**: `convention --group` 명령으로 변경된 파일을 의도(feat, fix 등)와 영역에 따라 지능적으로 그룹화하여 커밋을 진행합니다.
 - **설정 저장**: `convention --set-mode step|batch`로 기본 실행 모드를 저장합니다.
 - **언어 설정**: `convention --language ko|en|jp|cn`으로 커밋 메시지 생성 언어를 설정합니다.
+- **커스텀 템플릿**: `convention --template` 명령으로 커스텀 커밋 메시지 템플릿을 관리합니다.
 - **도움말**: `convention --help` 또는 `convention -h`로 사용 가능한 옵션을 확인합니다.
 
 ## 설치
