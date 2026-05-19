@@ -254,15 +254,17 @@ export function buildIntentPrompt({
  * @param {*} type - 커밋 타입
  * @param {*} files - 파일 목록
  * @param {*} summary - 변경 요약
+ * @param {*} diff - diff 데이터
  * @param {*} language - 언어
  * @param {*} previousMessage - 이전 메시지
- * @returns {string[]} - 프롬프트 데이터
+ * @returns {string} - 프롬프트 데이터
  */
 export function buildGroupCommitPrompt({
   groupName,
   type,
   files,
   summary,
+  diff,
   language = "ko",
   previousMessage,
 } = {}) {
@@ -289,9 +291,13 @@ export function buildGroupCommitPrompt({
     `Group Name: ${groupName}`,
     `Files in this group: ${files.join(", ")}`,
     "Keep the message concise and suitable for git commit -m.",
+    "Do not include sensitive values from the diff or summary in the commit message.",
     ...regenerationInstructions,
     "",
     "Change summary for this group:",
     summary,
+    "",
+    "Git diff:",
+    diff || "No diff provided.",
   ].join("\n");
 }
