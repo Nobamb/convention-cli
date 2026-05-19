@@ -1,0 +1,19 @@
+{
+  "name": "default",
+  "language": "ko",
+  "format": "{type}: {message}",
+  "types": [
+    "feat",
+    "fix",
+    "refactor",
+    "docs",
+    "style",
+    "test",
+    "chore"
+  ],
+  "rules": {
+    "maxLength": 72,
+    "requireScope": false,
+    "allowEmoji": false
+  }
+}
