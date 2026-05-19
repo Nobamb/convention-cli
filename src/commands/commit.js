@@ -5,6 +5,7 @@
 import { promptApiKey, saveApiKey } from "../auth/apiKey.js";
 import { setupModelInteractively } from "./model.js";
 import { loadConfig, saveConfig } from "../config/store.js";
+import { loadValidatedTemplate } from "../templates/loader.js";
 import { cleanAIResponse, generateLargeDiffCommitMessage } from "../core/ai.js";
 import {
   addFile,
@@ -51,9 +52,18 @@ const LOCAL_LLM_LOCAL_HOSTNAMES = new Set([
  * 빠져도 1차 MVP commit flow가 예측 가능한 기본값으로 동작합니다.
  */
 function loadRuntimeConfig() {
+  const templateResult = loadValidatedTemplate();
+
+  // 템플릿에 문제가 있는 경우 워닝 로그 출력
+  for (const warningMessage of templateResult.warnings) {
+    warn(warningMessage);
+  }
+
+  // 기본 설정과 설정 파일을 병합하고, 템플릿을 추가합니다.
   return {
     ...DEFAULT_CONFIG,
     ...loadConfig(),
+    template: templateResult.template,
   };
 }
 
@@ -915,6 +925,7 @@ async function createCommitMessage({
     language,
     mode,
     previousMessage,
+    template: config.template,
   });
 
   // AI 모델의 응답 정리
