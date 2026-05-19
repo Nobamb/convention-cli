@@ -52,6 +52,7 @@ export async function generateCommitMessage(prompt, config = {}) {
  * @param {Object} params.groupInfo - 그룹화 메타데이터 (groupName, type, summary 등)
  * @param {string} params.language - 결과 메시지 언어 ('ko', 'en' 등)
  * @param {string} params.previousMessage - 이전 메시지 (재생성 시 지침 추가에 사용)
+ * @param {Object} params.template - 검증된 팀 컨벤션 템플릿
  * @returns {Promise<string>} 생성된 커밋 메시지 원문
  */
 export async function generateLargeDiffCommitMessage({
@@ -63,6 +64,7 @@ export async function generateLargeDiffCommitMessage({
   groupInfo,
   language = "ko",
   previousMessage,
+  template,
 } = {}) {
   // 필수 값 체크
   assertNonEmptyString(diff, "diff");
@@ -92,6 +94,7 @@ export async function generateLargeDiffCommitMessage({
         diff,
         language,
         previousMessage,
+        template,
       });
     }
     // 아니라면 일반 커밋 메시지 생성 프롬프트 빌드
@@ -101,6 +104,7 @@ export async function generateLargeDiffCommitMessage({
         language,
         mode,
         previousMessage,
+        template,
       });
     }
     return generateCommitMessage(prompt, config);
@@ -137,6 +141,7 @@ export async function generateLargeDiffCommitMessage({
       diff: `(Merged change summary from large diff chunks)\n${mergedSummary}`,
       language,
       previousMessage,
+      template,
     });
   }
   // 아니라면 일반 커밋 메시지 생성 프롬프트 빌드
@@ -146,6 +151,7 @@ export async function generateLargeDiffCommitMessage({
       language,
       mode,
       previousMessage,
+      template,
     });
   }
 
