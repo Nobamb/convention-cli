@@ -15,10 +15,7 @@ import {
   push,
 } from "../core/git.js";
 import { maskSensitiveDiff } from "../core/security.js";
-import {
-  classifyChangedFiles,
-  groupFilesByIntent,
-} from "../core/grouping.js";
+import { classifyChangedFiles, groupFilesByIntent } from "../core/grouping.js";
 import { isUsageExhaustedError } from "../providers/errors.js";
 import { error, info, success, warn } from "../utils/logger.js";
 import {
@@ -129,7 +126,8 @@ async function shouldSendDiffToAI(config, options = {}, sessionState = {}) {
     const result = maskSensitiveDiff(options.diff);
     if (result.found) {
       forcePrompt = true;
-      warningMessage = "⚠️ 민감정보 탐지됨! 코드를 외부로 전송하기 전 반드시 확인하세요.";
+      warningMessage =
+        "⚠️ 민감정보 탐지됨! 코드를 외부로 전송하기 전 반드시 확인하세요.";
     }
   }
 
@@ -139,7 +137,11 @@ async function shouldSendDiffToAI(config, options = {}, sessionState = {}) {
   }
 
   // 강제 확인 조건이 아니면서 "once" 모드이고 이미 이번 세션에서 승인받았다면 바로 승인
-  if (!forcePrompt && mode === "once" && sessionState.externalTransmissionApproved) {
+  if (
+    !forcePrompt &&
+    mode === "once" &&
+    sessionState.externalTransmissionApproved
+  ) {
     return true;
   }
 
@@ -187,12 +189,12 @@ function prepareDiffForAI(diff, config) {
 
 /**
  * 파일별 diff를 AI 처리에 적합한 형태로 준비합니다.
- * 
+ *
  * 외부 AI Provider를 사용하고, 해당 provider의 설정에 따라 diff를 마스킹할지 결정합니다.
  * 1. 내부 제공 모델(gemini 등)을 사용하는 경우에는 원본 diff를 그대로 전달합니다.
  * 2. 외부 제공 모델을 사용하는 경우(외부 AI provider)에는 `maskSensitiveDiff` 함수를 호출하여
  *    민감해 보이는 값을 마스킹 처리한 후 반환합니다.
- * 
+ *
  * @param {Array<Object>} fileDiffs - 파일별 diff 정보 배열
  * @param {Object} config - AI 설정 객체
  * @returns {Array<Object>} AI 처리에 사용될 준비된 파일별 diff 정보 배열
@@ -278,7 +280,10 @@ async function recoverFromUsageExhaustedError(config) {
  * 다뤄야 합니다. 429 이후 provider, baseURL, modelVersion, authType 등이 바뀌면 diff가 다른 외부 endpoint로 전송될 수 있으므로
  * 이전 승인 상태를 재사용하지 않고 다음 retry에서 다시 확인 질문을 띄웁니다.
  */
-function shouldResetExternalTransmissionApproval(previousConfig = {}, nextConfig = {}) {
+function shouldResetExternalTransmissionApproval(
+  previousConfig = {},
+  nextConfig = {},
+) {
   return (
     previousConfig.provider !== nextConfig.provider ||
     previousConfig.baseURL !== nextConfig.baseURL ||
@@ -331,7 +336,8 @@ function isLocalLLMUnavailableError(error, config = {}) {
 async function recoverFromLocalLLMFailure(config, sessionState = {}) {
   // 최초 실패 시점의 localLLM 설정을 보관해 작업 종료 후 복원하거나 temporary 정책에서 다음 파일에 재사용합니다.
   if (!sessionState.originalLocalLLMConfig) {
-    sessionState.originalLocalLLMConfig = cloneConfigWithoutRuntimeSecrets(config);
+    sessionState.originalLocalLLMConfig =
+      cloneConfigWithoutRuntimeSecrets(config);
   }
 
   // convention 작업에 대한 사용자의 행동 정책을 결정합니다.
@@ -367,7 +373,9 @@ async function recoverFromLocalLLMFailure(config, sessionState = {}) {
     config: switchedConfig,
     // temporary 정책이면 현재 diff 재시도에만 대체 설정을 쓰고 다음 파일은 원래 localLLM 설정으로 돌아갑니다.
     configAfterSuccess:
-      policy === "temporary" ? sessionState.originalLocalLLMConfig : switchedConfig,
+      policy === "temporary"
+        ? sessionState.originalLocalLLMConfig
+        : switchedConfig,
   };
 }
 
@@ -443,7 +451,9 @@ function joinDiffs(fileDiffs) {
  * 잘못된 값이 저장되어 있어도 무한 루프가 생기지 않도록 DEFAULT_CONFIG 값으로 되돌립니다.
  */
 function getMaxRegenerateCount(config = {}) {
-  const value = Number(config.maxRegenerateCount ?? DEFAULT_CONFIG.maxRegenerateCount);
+  const value = Number(
+    config.maxRegenerateCount ?? DEFAULT_CONFIG.maxRegenerateCount,
+  );
 
   // 0도 허용합니다. 이 경우 Regenerate 선택지는 있어도 실제 재생성은 더 진행되지 않습니다.
   if (Number.isInteger(value) && value >= 0) {
@@ -471,7 +481,7 @@ function stageAndCommit(message, filesToCommit) {
  * AI 커밋 메시지 생성부터 사용자 승인, 최종 커밋까지의 핵심 공통 흐름을 제어합니다.
  * AI가 생성한 메시지를 사용자에게 보여주고(preview), 사용자의 결정(커밋, 재생성, 수동 수정, 취소)에 따라 루프를 돕니다.
  * 이 과정에서 429(사용량 초과) 오류 복구와 재생성 횟수 제한 등을 함께 관리합니다.
- * 
+ *
  * @param {Object} params
  * @param {string} params.diff - AI에게 전달할 전체 diff 문자열
  * @param {Array} params.fileDiffs - 파일별 diff 정보 배열 (대용량 diff 분석 및 요약에 사용)
@@ -479,6 +489,7 @@ function stageAndCommit(message, filesToCommit) {
  * @param {string} params.file - (Step 모드) 현재 처리 중인 단일 파일명
  * @param {Object} params.config - 현재 실행 환경의 런타임 설정
  * @param {string} params.mode - 실행 모드 ('step' 또는 'batch')
+ * @param {Object} params.groupInfo - 그룹 정보
  * @param {Object} params.sessionState - 외부 전송 승인 등 세션 전반의 상태를 유지하는 객체
  * @param {Object} params.transmissionOptions - UI 출력 시 파일명 등 컨텍스트 정보
  */
@@ -489,6 +500,7 @@ export async function runCommitDecisionFlow({
   file,
   config,
   mode,
+  groupInfo,
   sessionState,
   transmissionOptions = {},
 }) {
@@ -510,6 +522,7 @@ export async function runCommitDecisionFlow({
     files: filesToCommit,
     language: currentConfig.language,
     mode,
+    groupInfo,
     config: currentConfig,
     transmissionOptions,
     sessionState,
@@ -517,15 +530,25 @@ export async function runCommitDecisionFlow({
 
   // 사용자가 외부 AI 전송을 거부했거나 429 복구를 중단하면 Git 작업 없이 종료합니다.
   if (generated.stopped) {
-    warn("AI commit message generation was stopped. No staging or commit was performed.");
-    
+    warn(
+      "AI commit message generation was stopped. No staging or commit was performed.",
+    );
+
     // 사용자가 파일을 건너뛰기를 원하면 다음 파일 처리로 넘어갑니다.
     if (generated.skipped) {
-      return { committed: false, skipped: true, config: generated.config ?? currentConfig };
+      return {
+        committed: false,
+        skipped: true,
+        config: generated.config ?? currentConfig,
+      };
     }
 
     // 사용자가 작업을 중단하기로 선택하면, 현재 세션을 종료합니다.
-    return { committed: false, stopped: true, config: generated.config ?? currentConfig };
+    return {
+      committed: false,
+      stopped: true,
+      config: generated.config ?? currentConfig,
+    };
   }
 
   // 429 복구 중 provider/model/API key가 바뀌었을 수 있으므로 최신 config를 반영합니다.
@@ -544,8 +567,13 @@ export async function runCommitDecisionFlow({
   // Regenerate/Edit 후에도 continue로 다시 preview를 보여주기 위해 while 루프를 사용합니다.
   while (true) {
     // 빈 AI 응답이나 빈 수동 수정 결과는 commit하지 않습니다.
-    if (typeof currentMessage !== "string" || currentMessage.trim().length === 0) {
-      warn("AI returned an empty commit message. No staging or commit was performed.");
+    if (
+      typeof currentMessage !== "string" ||
+      currentMessage.trim().length === 0
+    ) {
+      warn(
+        "AI returned an empty commit message. No staging or commit was performed.",
+      );
       return { committed: false, config: currentConfig };
     }
 
@@ -588,7 +616,9 @@ export async function runCommitDecisionFlow({
 
       // 수정 prompt 취소 또는 빈 입력은 commit하지 않고 종료합니다.
       if (!editedMessage) {
-        warn("Commit message edit was canceled. No staging or commit was performed.");
+        warn(
+          "Commit message edit was canceled. No staging or commit was performed.",
+        );
         return { committed: false, config: currentConfig };
       }
 
@@ -601,7 +631,9 @@ export async function runCommitDecisionFlow({
     if (decision === COMMIT_DECISIONS.REGENERATE) {
       // 제한 횟수에 도달하면 AI를 더 호출하지 않고 사용자가 commit/edit/cancel 중 고르게 합니다.
       if (regenerateCount >= maxRegenerateCount) {
-        warn("Maximum regenerate count reached. Choose commit, edit, or cancel.");
+        warn(
+          "Maximum regenerate count reached. Choose commit, edit, or cancel.",
+        );
         continue;
       }
 
@@ -615,6 +647,7 @@ export async function runCommitDecisionFlow({
         files: filesToCommit,
         language: currentConfig.language,
         mode,
+        groupInfo,
         config: currentConfig,
         previousMessage: currentMessage,
         transmissionOptions,
@@ -623,15 +656,25 @@ export async function runCommitDecisionFlow({
 
       // 재생성 중단/실패도 commit으로 fallback하지 않습니다.
       if (regenerated.stopped) {
-        warn("AI commit message regeneration was stopped. No staging or commit was performed.");
+        warn(
+          "AI commit message regeneration was stopped. No staging or commit was performed.",
+        );
 
         // 사용자가 파일을 건너뛰기를 원하면 다음 파일 처리로 넘어갑니다.
         if (regenerated.skipped) {
-          return { committed: false, skipped: true, config: regenerated.config ?? currentConfig };
+          return {
+            committed: false,
+            skipped: true,
+            config: regenerated.config ?? currentConfig,
+          };
         }
 
-        // 사용자가 작업을 중단하기로 선택하면, 현재 세션을 종료합니다. 
-        return { committed: false, stopped: true, config: regenerated.config ?? currentConfig };
+        // 사용자가 작업을 중단하기로 선택하면, 현재 세션을 종료합니다.
+        return {
+          committed: false,
+          stopped: true,
+          config: regenerated.config ?? currentConfig,
+        };
       }
 
       // 복구 과정에서 config가 바뀌었을 수 있으므로 최신 config와 새 메시지를 반영합니다.
@@ -660,7 +703,9 @@ async function pushAfterSuccessfulCommit(options = {}) {
   );
 
   if (!approved) {
-    warn("사용자가 push를 취소했습니다. 로컬 커밋은 유지되고 원격 저장소는 변경되지 않았습니다.");
+    warn(
+      "사용자가 push를 취소했습니다. 로컬 커밋은 유지되고 원격 저장소는 변경되지 않았습니다.",
+    );
     return;
   }
 
@@ -687,8 +732,9 @@ const GROUP_FALLBACK_INTENTS = new Set([
  * 여기서는 fileType을 기준 계약으로 삼고 기존 grouping helper 호환을 위해 category만 보조로 채웁니다.
  */
 function normalizeFileClassification(classification = {}) {
-  // category fallback 
-  const fileType = classification.fileType || classification.category || "unknown";
+  // category fallback
+  const fileType =
+    classification.fileType || classification.category || "unknown";
 
   // category를 fileType으로 보정
   return {
@@ -723,12 +769,20 @@ function inferGroupedIntentByRules({ fileType, diff = "" }) {
   }
 
   // diff에 export, new command, new option, add, added, create, created 키워드가 포함되어 있다면 feat로 추론
-  if (/\b(export|new command|new option|add|added|create|created)\b/.test(lowerDiff)) {
+  if (
+    /\b(export|new command|new option|add|added|create|created)\b/.test(
+      lowerDiff,
+    )
+  ) {
     return "feat";
   }
 
   // diff에 refactor, rename, move, split, extract, cleanup, restructure 키워드가 포함되어 있다면 refactor로 추론
-  if (/\b(refactor|rename|move|split|extract|cleanup|restructure)\b/.test(lowerDiff)) {
+  if (
+    /\b(refactor|rename|move|split|extract|cleanup|restructure)\b/.test(
+      lowerDiff,
+    )
+  ) {
     return "refactor";
   }
 
@@ -744,7 +798,9 @@ function inferGroupedIntentByRules({ fileType, diff = "" }) {
  */
 function buildRuleBasedGroupingItems(fileDiffs) {
   // 파일들의 경로를 기반으로 카테고리를 분류합니다.
-  const classifications = classifyChangedFiles(fileDiffs.map(({ file }) => file));
+  const classifications = classifyChangedFiles(
+    fileDiffs.map(({ file }) => file),
+  );
   // 파일별 카테고리를 Map 형태로 변환합니다.
   const classificationByFile = new Map(
     classifications.map((classification) => [
@@ -935,7 +991,7 @@ async function createCommitMessageWithRecovery({
         message,
         config: resultConfig,
       };
-    // 사용량 소진 오류 catch
+      // 사용량 소진 오류 catch
     } catch (providerError) {
       // localLLM 사용 불가능 오류 catch
       if (isLocalLLMUnavailableError(providerError, currentConfig)) {
@@ -944,7 +1000,10 @@ async function createCommitMessageWithRecovery({
         );
 
         // 복구 로직
-        const localRecovery = await recoverFromLocalLLMFailure(currentConfig, sessionState);
+        const localRecovery = await recoverFromLocalLLMFailure(
+          currentConfig,
+          sessionState,
+        );
 
         // 파일 건너뛰기
         if (localRecovery.skipped) {
@@ -965,7 +1024,12 @@ async function createCommitMessageWithRecovery({
         }
 
         // 외부 전송 승인 초기화
-        if (shouldResetExternalTransmissionApproval(currentConfig, localRecovery.config)) {
+        if (
+          shouldResetExternalTransmissionApproval(
+            currentConfig,
+            localRecovery.config,
+          )
+        ) {
           // localLLM에서 Cloud API 또는 다른 endpoint로 바뀌면 이전 승인 상태를 재사용하지 않습니다.
           sessionState.externalTransmissionApproved = false;
         }
@@ -974,7 +1038,8 @@ async function createCommitMessageWithRecovery({
         currentConfig = localRecovery.config;
         // configAfterSuccess는 recovery가 성공해서 원래 설정으로 돌아가는 경우에만 사용합니다.
         // 즉시 next iteration으로 넘어가므로 별도 저장 없이 루프 시작 시점에 반영하면 충분합니다.
-        configAfterSuccessfulGeneration = localRecovery.configAfterSuccess ?? null;
+        configAfterSuccessfulGeneration =
+          localRecovery.configAfterSuccess ?? null;
         // 다음 루프에서 복구된 설정으로 다시 시도
         continue;
       }
@@ -999,7 +1064,9 @@ async function createCommitMessageWithRecovery({
       }
 
       // 외부 전송 승인 초기화
-      if (shouldResetExternalTransmissionApproval(currentConfig, recovery.config)) {
+      if (
+        shouldResetExternalTransmissionApproval(currentConfig, recovery.config)
+      ) {
         // provider/model/baseURL/authType 등이 바뀌면 같은 diff라도 전송 대상이 바뀔 수 있습니다.
         // 이전 provider에 대해 받은 "once" 승인을 새 provider에 재사용하지 않도록 세션 승인을 초기화합니다.
         sessionState.externalTransmissionApproved = false;
@@ -1104,7 +1171,9 @@ export async function runStepCommit(options = {}) {
     // 커밋 횟수 확인
     // 승인한 커밋이 없으면 안내 메시지 출력
     // step 모드는 파일별로 커밋을 건너뛸 수 있으므로, 최소 1개 이상 성공했을 때만 push를 후속 실행합니다.
-    await pushAfterSuccessfulCommit({ push: options.push && committedCount > 0 });
+    await pushAfterSuccessfulCommit({
+      push: options.push && committedCount > 0,
+    });
 
     if (committedCount === 0) {
       info("사용자가 승인한 커밋이 없습니다.");
@@ -1272,7 +1341,9 @@ export async function runGroupedCommit(options = {}) {
     // 그룹 반복 처리
     for (const group of groups) {
       // 그룹에 속한 파일들의 diff 추출
-      const groupFileDiffs = fileDiffs.filter(f => group.files.includes(f.file));
+      const groupFileDiffs = fileDiffs.filter((f) =>
+        group.files.includes(f.file),
+      );
       // 그룹 diff 조인
       const groupDiff = joinDiffs(groupFileDiffs);
       // 그룹 파일 목록
@@ -1313,7 +1384,9 @@ export async function runGroupedCommit(options = {}) {
     }
 
     // 커밋이 성공한 경우에만 push 확인 및 push 수행
-    await pushAfterSuccessfulCommit({ push: options.push && committedCount > 0 });
+    await pushAfterSuccessfulCommit({
+      push: options.push && committedCount > 0,
+    });
 
     // commit count가 없다면 사용자에게 커밋이 없음을 알림
     if (committedCount === 0) {
