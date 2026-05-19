@@ -16,6 +16,7 @@ import {
 } from "../src/commands/config.js";
 import { runModelSetup } from "../src/commands/model.js";
 import { runReset } from "../src/commands/reset.js";
+import { runTemplateCommand } from "../src/commands/template.js";
 import { error as logError } from "../src/utils/logger.js";
 
 /**
@@ -78,6 +79,11 @@ program.option(
   "최근 커밋 1개를 취소하고 변경사항은 working tree에 남깁니다.",
 );
 
+program.option(
+  "--template [action]",
+  "커밋 템플릿을 관리합니다. action: init, show, validate",
+);
+
 program.parse(process.argv);
 
 // 옵션 가져오기
@@ -95,6 +101,7 @@ async function main() {
   // 설정 옵션 명시 여부
   const hasConfigOption =
     options.model !== undefined ||
+    options.template !== undefined ||
     options.question !== undefined ||
     options.setMode !== undefined ||
     options.language !== undefined;
@@ -137,6 +144,12 @@ async function main() {
         : [];
       // 모델 설정을 대화형 또는 직접 지정 방식으로 저장합니다.
       await runModelSetup(provider, authType, modelVersion);
+    }
+
+    if (options.template !== undefined) {
+      // 템플릿 명령은 설정/관리 명령이므로 commit flow, diff 추출, AI 호출을 실행하지 않습니다.
+      // 값 없이 들어온 --template은 commander가 true로 전달하며, 이 경우 현재 템플릿 상태를 보여줍니다.
+      await runTemplateCommand(options.template);
     }
 
     if (options.question !== undefined) {
