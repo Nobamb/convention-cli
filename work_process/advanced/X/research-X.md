@@ -50,13 +50,13 @@ export const OAUTH_PROVIDERS = {
       requiresSecret: true
     }
   },
-  gemini: {
-    authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
-    tokenUrl: "https://oauth2.googleapis.com/token",
-    scopes: ["https://www.googleapis.com/auth/generative-language"],
+  antigravity: {
+    authUrl: "https://accounts.antigravity.ai/o/oauth2/v2/auth",
+    tokenUrl: "https://oauth2.antigravity.ai/token",
+    scopes: ["https://api.antigravity.ai/auth/cli"],
     client: {
-      idEnv: "CONVENTION_GEMINI_CLIENT_ID",
-      secretEnv: "CONVENTION_GEMINI_CLIENT_SECRET",
+      idEnv: "CONVENTION_ANTIGRAVITY_CLIENT_ID",
+      secretEnv: "CONVENTION_ANTIGRAVITY_CLIENT_SECRET",
       requiresSecret: true
     }
   }
