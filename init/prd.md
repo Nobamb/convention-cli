@@ -122,7 +122,7 @@ Git 변경 사항 분석
 
 4. AI 개발 워크플로우에 익숙한 사용자
 
-Gemini, OpenAI, Claude, Ollama, LM Studio 등 AI 도구를 개발 과정에 적극적으로 활용하는 사용자입니다.
+Antigravity, OpenAI, Claude, Ollama, LM Studio 등 AI 도구를 개발 과정에 적극적으로 활용하는 사용자입니다.
 
 ---
 
@@ -141,7 +141,7 @@ convention --batch
 convention --push
 convention --reset
 convention --language en
-convention --model gemini
+convention --model antigravity
 
 즉, Convention CLI는 Git 커밋 메시지 작성 보조 도구이면서 동시에 AI 기반 Git 워크플로우 자동화 도구입니다.
 
@@ -179,7 +179,7 @@ Configuration Options:
 --set-mode <mode> 기본 convention 명령어의 동작 방식을 변경합니다.
 (사용 가능 값: step, batch)
 --model <model_name> AI 분석에 사용할 모델을 변경합니다.
-(사용 가능 값: gemini, codex, ollama 등)
+(사용 가능 값: antigravity, codex, ollama 등)
 --language <lang> 커밋 컨벤션을 작성할 기본 언어를 변경합니다.
 (사용 가능 값: ko(기본), en, jp, cn)
 
@@ -349,7 +349,7 @@ convention --model 명령어는 AI 커밋 메시지 생성에 사용할 AI Agent
 지원 예정 AI Agent Provider
 Convention CLI는 AI Agent Provider를 안정 연동 가능 여부에 따라 Stable Provider와 Experimental Provider로 구분합니다.
 Stable Providers
-gemini
+antigravity
 github-copilot
 codex
 claude
@@ -359,7 +359,7 @@ kimi
 glm
 localLLM
 Experimental Providers
-antigravity
+gemini
 manus
 Stable Provider는 공식 API, SDK, OAuth 또는 OpenAI-compatible endpoint 등 외부 CLI 연동에 사용할 수 있는 공식 또는 준공식 경로가 있는 Provider를 의미합니다.
 Experimental Provider는 공식 외부 API 또는 OAuth 연동 방식이 명확하지 않거나, IDE/Agent 플랫폼 내부 인증에 의존할 가능성이 있는 Provider를 의미합니다.
@@ -371,7 +371,7 @@ convention --model
 
 Stable Providers:
 
-> gemini
+> antigravity
 > github-copilot
 > codex
 > claude
@@ -382,13 +382,13 @@ Stable Providers:
 > localLLM
 
 Experimental Providers:
-antigravity
+gemini
 manus
 사용자는 위아래 방향키로 사용할 AI Agent Provider를 선택합니다.
 
 Provider 선택 후 인증 방식 선택
-예를 들어 gemini를 선택하면 다음으로 인증 방식을 선택합니다.
-? Gemini를 어떤 방식으로 사용할까요?
+예를 들어 antigravity를 선택하면 다음으로 인증 방식을 선택합니다.
+? Antigravity를 어떤 방식으로 사용할까요?
 
 > OAuth 로그인
 > API Key 직접 입력
@@ -396,12 +396,12 @@ Provider 선택 후 인증 방식 선택
 인증 방식
 OAuth 방식
 OAuth 방식을 선택하면 사용자가 이미 구독 중이거나 로그인 가능한 계정을 브라우저 인증을 통해 연결합니다.
-🌐 브라우저를 열어 Gemini 계정 로그인을 진행합니다.
-✅ Gemini OAuth 인증이 완료되었습니다.
+🌐 브라우저를 열어 Antigravity 계정 로그인을 진행합니다.
+✅ Antigravity OAuth 인증이 완료되었습니다.
 이후 Convention CLI는 저장된 OAuth 토큰을 사용하여 해당 계정에서 사용 가능한 모델을 호출합니다.
 API Key 방식
 API Key 방식을 선택하면 사용자가 직접 발급받은 API Key를 입력합니다.
-? Gemini API Key를 입력하세요:
+? Antigravity API Key를 입력하세요:
 
 ---
 
@@ -416,19 +416,19 @@ localLLM처럼 별도 인증이 필요하지 않은 Provider는 authType을 none
 
 모델 버전 선택
 인증 방식까지 선택한 뒤에는 사용할 모델 버전을 선택합니다.
-? 사용할 Gemini 모델 버전을 선택하세요:
+? 사용할 Antigravity 모델 버전을 선택하세요:
 
-> gemini 3.1 pro
-> gemini 3.1 flash
-> gemini 2.5 pro
-> gemini 2.5 flash
+> antigravity 3.1 pro
+> antigravity 3.1 flash
+> antigravity 2.5 pro
+> antigravity 2.5 flash
 > 사용자는 방향키로 모델 버전을 선택합니다.
 > 설정 저장 시에는 사용자에게 보여주는 이름과 내부 호출용 값을 분리할 수 있습니다.
 > {
-> "provider": "gemini",
+> "provider": "antigravity",
 > "authType": "oauth",
-> "modelDisplayName": "gemini 3.1 pro",
-> "modelVersion": "gemini-3.1-pro"
+> "modelDisplayName": "antigravity 3.1 pro",
+> "modelVersion": "antigravity-3.1-pro"
 > }
 
 convention --model 사용 패턴
@@ -442,38 +442,38 @@ convention --model 사용 패턴
    설정 저장
 
 Provider만 지정
-   convention --model gemini
-   gemini를 사용할 AI Agent Provider로 지정하고, 이후 인증 방식과 모델 버전만 대화형 UI로 선택합니다.
-   ? Gemini를 어떤 방식으로 사용할까요?
+   convention --model antigravity
+   antigravity를 사용할 AI Agent Provider로 지정하고, 이후 인증 방식과 모델 버전만 대화형 UI로 선택합니다.
+   ? Antigravity를 어떤 방식으로 사용할까요?
    > OAuth 로그인
    > API Key 직접 입력
 
-? 사용할 Gemini 모델 버전을 선택하세요:
+? 사용할 Antigravity 모델 버전을 선택하세요:
 
-> gemini 3.1 pro
-> gemini 3.1 flash
-> gemini 2.5 pro
-> gemini 2.5 flash
+> antigravity 3.1 pro
+> antigravity 3.1 flash
+> antigravity 2.5 pro
+> antigravity 2.5 flash
 
 Provider + 인증 방식 지정
-   convention --model gemini oauth
-   gemini와 oauth 방식을 지정하고, 모델 버전만 대화형 UI로 선택합니다.
-   ? 사용할 Gemini 모델 버전을 선택하세요:
+   convention --model antigravity oauth
+   antigravity와 oauth 방식을 지정하고, 모델 버전만 대화형 UI로 선택합니다.
+   ? 사용할 Antigravity 모델 버전을 선택하세요:
 
-   > gemini 3.1 pro
-   > gemini 3.1 flash
-   > gemini 2.5 pro
-   > gemini 2.5 flash
+   > antigravity 3.1 pro
+   > antigravity 3.1 flash
+   > antigravity 2.5 pro
+   > antigravity 2.5 flash
 
 Provider + 인증 방식 + 모델 버전까지 한 번에 지정
-   convention --model gemini oauth "3.1 pro"
+   convention --model antigravity oauth "3.1 pro"
    AI Agent Provider, 인증 방식, 모델 버전을 한 번에 지정합니다.
    이 경우 대화형 UI 없이 바로 설정을 저장합니다.
    {
-   "provider": "gemini",
+   "provider": "antigravity",
    "authType": "oauth",
-   "modelDisplayName": "gemini 3.1 pro",
-   "modelVersion": "gemini-3.1-pro"
+   "modelDisplayName": "antigravity 3.1 pro",
+   "modelVersion": "antigravity-3.1-pro"
    }
 
 명령어 설계 규칙
@@ -485,7 +485,7 @@ convention --model [provider] [authType] [modelVersion]
 예시
 provider
 사용할 AI Agent Provider
-gemini, github-copilot, claude, localLLM
+antigravity, github-copilot, claude, localLLM
 authType
 인증 방식
 oauth, api, none
@@ -496,12 +496,12 @@ modelVersion
 사용 예시
 convention --model
 전체 대화형 설정을 실행합니다.
-convention --model gemini
-Gemini를 선택한 뒤 인증 방식과 모델 버전을 선택합니다.
-convention --model gemini oauth
-Gemini OAuth 방식을 선택한 뒤 모델 버전만 선택합니다.
-convention --model gemini oauth "3.1 pro"
-Gemini OAuth 방식과 3.1 pro 모델 버전을 한 번에 설정합니다.
+convention --model antigravity
+Antigravity를 선택한 뒤 인증 방식과 모델 버전을 선택합니다.
+convention --model antigravity oauth
+Antigravity OAuth 방식을 선택한 뒤 모델 버전만 선택합니다.
+convention --model antigravity oauth "3.1 pro"
+Antigravity OAuth 방식과 3.1 pro 모델 버전을 한 번에 설정합니다.
 convention --model claude api
 Claude API Key 방식을 선택한 뒤 모델 버전을 선택합니다.
 convention --model github-copilot oauth
@@ -536,10 +536,10 @@ http://localhost:11434/v1
 기존 설정 파일에서 model 하나로만 관리하지 않고, 아래처럼 Provider, 인증 방식, 모델 표시명, 실제 모델 식별자를 분리합니다.
 {
 "mode": "step",
-"provider": "gemini",
+"provider": "antigravity",
 "authType": "oauth",
-"modelDisplayName": "gemini 3.1 pro",
-"modelVersion": "gemini-3.1-pro",
+"modelDisplayName": "antigravity 3.1 pro",
+"modelVersion": "antigravity-3.1-pro",
 "language": "ko",
 "baseURL": null
 }
@@ -565,9 +565,9 @@ Local LLM 방식일 경우:
 }
 
 8-2 최종 반영 문장
-convention --model 명령어는 AI 커밋 메시지 생성에 사용할 AI Agent Provider, 인증 방식, 모델 버전을 설정하는 기능이다. 사용자는 gemini, github-copilot, codex, claude, grok, deepseek, kimi, glm, localLLM 등 Stable Provider와 antigravity, manus 등 Experimental Provider 중 하나를 선택할 수 있다. 선택한 Provider에 따라 OAuth, API Key 또는 인증 없음 방식으로 연결하며, 각 Provider에서 사용할 모델 버전을 선택할 수 있도록 한다.
-명령어는 대화형 설정과 직접 지정 방식을 모두 지원한다. convention --model은 Provider, 인증 방식, 모델 버전을 모두 대화형으로 선택하며, convention --model gemini는 인증 방식과 버전만 선택한다. convention --model gemini oauth는 모델 버전만 선택하고, convention --model gemini oauth "3.1 pro"처럼 입력하면 모든 설정을 한 번에 저장한다.
-GitHub Copilot은 공식 CLI, OAuth 인증, Copilot SDK 등을 통한 외부 도구 연동 가능성이 비교적 명확하므로 Stable Provider 후보로 포함한다. 반면 Antigravity는 agent-first IDE 플랫폼 성격이 강하고, 외부 CLI에서 직접 호출 가능한 공식 Provider 구조가 명확하지 않으므로 Experimental Provider로 분류한다. 향후 공식 API, OAuth, MCP 또는 CLI 브릿지 방식이 안정화될 경우 정식 Provider로 승격할 수 있다.
+convention --model 명령어는 AI 커밋 메시지 생성에 사용할 AI Agent Provider, 인증 방식, 모델 버전을 설정하는 기능이다. 사용자는 antigravity, github-copilot, codex, claude, grok, deepseek, kimi, glm, localLLM 등 Stable Provider와 gemini, manus 등 Experimental Provider 중 하나를 선택할 수 있다. 선택한 Provider에 따라 OAuth, API Key 또는 인증 없음 방식으로 연결하며, 각 Provider에서 사용할 모델 버전을 선택할 수 있도록 한다.
+명령어는 대화형 설정과 직접 지정 방식을 모두 지원한다. convention --model은 Provider, 인증 방식, 모델 버전을 모두 대화형으로 선택하며, convention --model antigravity는 인증 방식과 버전만 선택한다. convention --model antigravity oauth는 모델 버전만 선택하고, convention --model antigravity oauth "3.1 pro"처럼 입력하면 모든 설정을 한 번에 저장한다.
+Antigravity는 공식 CLI, OAuth 인증, Copilot SDK 등을 통한 외부 도구 연동 가능성이 비교적 명확하므로 Stable Provider 후보로 포함한다. 반면 Gemini는 agent-first IDE 플랫폼 성격이 강하고, 외부 CLI에서 직접 호출 가능한 공식 Provider 구조가 명확하지 않으므로 Experimental Provider로 분류한다. 향후 공식 API, OAuth, MCP 또는 CLI 브릿지 방식이 안정화될 경우 정식 Provider로 승격할 수 있다.
 
 ---
 
@@ -821,7 +821,7 @@ Convention CLI는 AI 환경을 크게 두 가지로 구분합니다.
 
 지원 예정 예시
 
-Gemini
+Antigravity
 OpenAI
 Claude
 Codex
@@ -928,7 +928,7 @@ Convention CLI는 사용자 설정과 인증 정보를 분리해 관리합니다
 API Key 방식:
 
 {
-"provider": "gemini",
+"provider": "antigravity",
 "authType": "apiKey",
 "apiKey": "**\*\***\*\*\***\*\***"
 }
@@ -1286,7 +1286,7 @@ Ollama 또는 LM Studio가 실행 중인지 확인해 주세요.
 
 20-7. AI Provider 429 또는 사용량 소진
 
-Gemini 또는 OpenAI-compatible Provider가 HTTP 429, rate limit, usage exhausted 상태를 반환하면 CLI는 raw response body를 출력하지 않고 status만 보존합니다. 이때 사용자는 터미널에서 다음 중 하나를 선택합니다.
+Antigravity 또는 OpenAI-compatible Provider가 HTTP 429, rate limit, usage exhausted 상태를 반환하면 CLI는 raw response body를 출력하지 않고 status만 보존합니다. 이때 사용자는 터미널에서 다음 중 하나를 선택합니다.
 
 1. 다른 API Key를 입력하고 같은 Provider/모델로 재시도
 2. 기존 `convention --model` 설정 flow로 Provider 또는 모델을 바꾼 뒤 재시도
@@ -1323,7 +1323,7 @@ Gemini 또는 OpenAI-compatible Provider가 HTTP 429, rate limit, usage exhauste
 2. --reset
 3. --model
 4. API Key 인증
-5. Gemini 또는 OpenAI 연동
+5. Antigravity 또는 OpenAI 연동
 6. 로컬 LLM endpoint 설정
 7. /v1/models 기반 로컬 모델 선택
 
