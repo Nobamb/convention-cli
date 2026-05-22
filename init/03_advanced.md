@@ -785,10 +785,10 @@ authUrl: "...",
 tokenUrl: "...",
 scopes: ["..."]
 },
-gemini: {
-authUrl: "...",
-tokenUrl: "...",
-scopes: ["..."]
+antigravity: {
+  authUrl: "https://accounts.antigravity.ai/o/oauth2/v2/auth",
+  tokenUrl: "https://oauth2.antigravity.ai/token",
+  scopes: ["https://api.antigravity.ai/auth/cli"]
 }
 };
 
@@ -877,7 +877,7 @@ OAuth token 만료 시 자동 갱신 또는 안전한 재로그인 안내가 동
 OAuth 인증 정보를 실제 Provider 호출에 연결합니다.
 구현 대상 파일
 src/providers/index.js
-src/providers/gemini.js
+src/providers/antigravity.js
 src/providers/github-copilot.js
 src/auth/oauth.js
 
@@ -1441,7 +1441,7 @@ convention --batch
 - AI prompt에 template 반영
 
 7-7. OAuth 테스트
-convention --model gemini oauth
+convention --model antigravity oauth
 
 확인 사항:
 
