@@ -50,7 +50,7 @@ W 단계 테스트는 실제 브라우저 로그인이나 외부 OAuth provider 
 | --- | --- | --- |
 | token 저장 | tokenSet 입력 후 `saveOAuthTokens()` 호출 | `credentials.json` 계층에 provider별로 저장된다. |
 | config 저장 금지 | tokenSet 저장 후 config mock 확인 | `config.json`에 `accessToken`, `refreshToken`, `idToken`, `authorizationCode`, `clientSecret`이 저장되지 않는다. |
-| provider별 분리 저장 | github와 gemini tokenSet 저장 | 각 provider token이 `credentials.oauth.<provider>` 아래에 분리된다. |
+| provider별 분리 저장 | github와 antigravity tokenSet 저장 | 각 provider token이 `credentials.oauth.<provider>` 아래에 분리된다. |
 | 기존 credentials 보존 | API Key credentials가 이미 있음 | OAuth token 저장이 기존 API Key 항목을 덮어쓰지 않는다. |
 | token metadata 저장 | `expiresAt`, `scope`, `tokenType` 포함 | secret이 아닌 metadata가 tokenSet과 함께 credentials 계층에 저장된다. |
 | 저장 실패 | credentials 쓰기 실패 mock | token 원문 없이 권한 또는 저장 실패 요약만 출력한다. |
