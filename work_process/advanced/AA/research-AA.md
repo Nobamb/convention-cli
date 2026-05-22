@@ -58,14 +58,14 @@ OAuth token은 설정 파일이 아니라 credentials 파일에만 저장한다.
 ```json
 {
   "apiKeys": {
-    "gemini": "[REDACTED]"
+    "antigravity": "[REDACTED]"
   },
   "oauth": {
-    "gemini": {
+    "antigravity": {
       "accessToken": "[REDACTED]",
       "refreshToken": "[REDACTED]",
       "expiresAt": "2026-05-19T12:00:00.000Z",
-      "scope": "https://www.googleapis.com/auth/generative-language",
+      "scope": "https://api.antigravity.ai/auth/cli",
       "tokenType": "Bearer"
     },
     "github-copilot": {
