@@ -18,8 +18,8 @@
 
 | 케이스 | 준비 | 기대 결과 |
 | --- | --- | --- |
-| OAuth provider 호출 | `config.provider: "gemini"`, `authType: "oauth"` | provider routing이 OAuth auth resolver를 호출한다. |
-| API Key provider 호출 | `config.provider: "gemini"`, `authType: "api"` | OAuth token을 읽지 않고 API Key resolver만 사용한다. |
+| OAuth provider 호출 | `config.provider: "antigravity"`, `authType: "oauth"` | provider routing이 OAuth auth resolver를 호출한다. |
+| API Key provider 호출 | `config.provider: "antigravity"`, `authType: "api"` | OAuth token을 읽지 않고 API Key resolver만 사용한다. |
 | 인증 없는 provider 호출 | `config.provider: "localLLM"`, `authType: "none"` | OAuth/API Key credential을 읽지 않는다. |
 | provider 누락 | `authType: "oauth"`, `provider: null` | 명확한 provider 설정 오류로 중단한다. |
 | 알 수 없는 provider | `provider: "unknown"`, `authType: "oauth"` | mock fallback 없이 지원하지 않는 provider 오류를 반환한다. |
@@ -57,12 +57,12 @@
 
 | 케이스 | 준비 | 기대 결과 |
 | --- | --- | --- |
-| API Key와 OAuth token 동시 존재 | credentials에 `apiKeys.gemini`, `oauth.gemini` 모두 존재 | `authType: "oauth"`이면 OAuth token만 사용한다. |
+| API Key와 OAuth token 동시 존재 | credentials에 `apiKeys.antigravity`, `oauth.antigravity` 모두 존재 | `authType: "oauth"`이면 OAuth token만 사용한다. |
 | API Key 방식 실행 | 같은 credentials에서 `authType: "api"` | OAuth token을 읽거나 refresh하지 않는다. |
 | OAuth 방식 실행 | 같은 credentials에서 `authType: "oauth"` | API Key를 읽거나 API Key header를 만들지 않는다. |
 | OAuth 설정 저장 후 API Key 보존 | OAuth token 갱신 발생 | 기존 API Key 값이 삭제되거나 덮어써지지 않는다. |
 | API Key 설정 후 OAuth 보존 | API Key 저장 flow mock | 기존 OAuth token 값이 삭제되거나 덮어써지지 않는다. |
-| provider별 분리 | `gemini`와 `github-copilot` token 모두 존재 | 현재 provider의 token만 사용하고 다른 provider token은 사용하지 않는다. |
+| provider별 분리 | `antigravity`와 `github-copilot` token 모두 존재 | 현재 provider의 token만 사용하고 다른 provider token은 사용하지 않는다. |
 
 ## No Token Logging 테스트
 
@@ -89,7 +89,7 @@
 
 | 케이스 | 준비 | 기대 결과 |
 | --- | --- | --- |
-| Gemini OAuth 요청 | `provider: "gemini"`, OAuth token 존재 | Gemini provider mock이 OAuth header를 받는다. |
+| Antigravity OAuth 요청 | `provider: "antigravity"`, OAuth token 존재 | Antigravity provider mock이 OAuth header를 받는다. |
 | GitHub Copilot OAuth 요청 | `provider: "github-copilot"`, OAuth token 존재 | GitHub Copilot provider mock이 OAuth header를 받는다. |
 | listModels OAuth 요청 | `listProviderModels(config)` 호출 | 모델 목록 요청에도 OAuth header가 적용된다. |
 | generate OAuth 요청 | `generateWithProvider({ prompt, config })` 호출 | 커밋 메시지 생성 요청에도 OAuth header가 적용된다. |
@@ -119,7 +119,7 @@
 
 ```bash
 npm test
-node bin/convention.js --model gemini oauth
+node bin/convention.js --model antigravity oauth
 node bin/convention.js --model github-copilot oauth
 ```
 
