@@ -23,7 +23,7 @@ OAuth access token 만료 확인, refresh token 확인, refresh 요청, 새 toke
 | refresh token 존재 | provider token record에 `refreshToken` 존재 | token endpoint refresh 요청을 수행한다. |
 | refresh token 없음 | `accessToken`만 있고 `refreshToken` 없음 | refresh 요청을 보내지 않고 재로그인 안내를 출력한다. |
 | refresh token 빈 문자열 | `refreshToken: ""` | refresh token 없음과 동일하게 처리한다. |
-| 다른 provider token만 존재 | `oauth.gemini`만 있고 요청 provider는 `github-copilot` | 요청 provider의 refresh token 없음으로 처리한다. |
+| 다른 provider token만 존재 | `oauth.antigravity`만 있고 요청 provider는 `github-copilot` | 요청 provider의 refresh token 없음으로 처리한다. |
 
 ## Refresh 요청 테스트
 
@@ -104,7 +104,7 @@ expect(output).not.toContain("Authorization: Bearer");
 
 - 실제 사용자 `~/.config/convention/credentials.json`을 읽거나 쓰지 않는다.
 - 테스트용 임시 config directory 또는 mock store를 사용한다.
-- 실제 OAuth provider, GitHub, Gemini endpoint에 접속하지 않는다.
+- 실제 OAuth provider, GitHub, Antigravity endpoint에 접속하지 않는다.
 - 실제 commit, push, reset은 수행하지 않는다.
 - 실패 fixture에도 실제 token이나 private key를 넣지 않는다.
 
