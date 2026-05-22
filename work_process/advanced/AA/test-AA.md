@@ -30,12 +30,12 @@ OAuth token 저장소가 `credentials.json`에 provider별로 안전하게 token
 
 | 케이스 | 준비 | 기대 결과 |
 | --- | --- | --- |
-| provider A 저장 후 provider B 저장 | `gemini`, `github-copilot` token 순차 저장 | 두 provider token이 각각 별도 key 아래 유지된다. |
-| provider A 갱신 | `oauth.gemini` token이 이미 있음 | `credentials.oauth.gemini`만 갱신되고 다른 provider token은 변경되지 않는다. |
+| provider A 저장 후 provider B 저장 | `antigravity`, `github-copilot` token 순차 저장 | 두 provider token이 각각 별도 key 아래 유지된다. |
+| provider A 갱신 | `oauth.antigravity` token이 이미 있음 | `credentials.oauth.antigravity`만 갱신되고 다른 provider token은 변경되지 않는다. |
 | provider별 로드 | 여러 provider token 저장 | 요청한 provider의 token만 반환한다. |
 | provider별 삭제 | 여러 provider token 저장 후 한 provider 삭제 | 해당 provider의 `oauth`만 제거되고 다른 provider와 API key는 유지된다. |
 | 지원하지 않는 provider | 허용 목록 밖 provider 입력 | mock fallback 없이 명확한 오류로 중단한다. |
-| API Key namespace 보존 | `credentials.apiKeys.gemini`와 `credentials.oauth.gemini` 동시 존재 | OAuth 저장/삭제는 `apiKeys.gemini` 값을 변경하지 않는다. |
+| API Key namespace 보존 | `credentials.apiKeys.antigravity`와 `credentials.oauth.antigravity` 동시 존재 | OAuth 저장/삭제는 `apiKeys.antigravity` 값을 변경하지 않는다. |
 
 ## config.json 제외 테스트
 
@@ -100,7 +100,7 @@ test-refresh-token-AA-should-not-leak
 | JSON parse 불가 | `credentials.json`에 `{ broken` 저장 | 원문 출력 없이 경고 후 빈 credentials로 fallback한다. |
 | root 타입 불일치 | credentials 내용이 배열 또는 문자열 | 빈 credentials로 fallback하거나 schema 오류를 안전하게 처리한다. |
 | apiKeys namespace 타입 불일치 | `apiKeys`가 문자열 | API Key 원문 출력 없이 schema 오류를 안전하게 처리하고 OAuth 저장 시 덮어쓰지 않는다. |
-| oauth namespace 타입 불일치 | `oauth.gemini`가 문자열 | token 로드 시 null을 반환하고 재로그인 안내가 가능하다. |
+| oauth namespace 타입 불일치 | `oauth.antigravity`가 문자열 | token 로드 시 null을 반환하고 재로그인 안내가 가능하다. |
 | 저장 중 기존 파일 깨짐 | 깨진 credentials 파일 위에 token 저장 시도 | 기존 파일을 원문 출력 없이 백업한 뒤 새 credentials를 저장하며 token 원문은 출력하지 않는다. |
 
 fallback은 조용히 mock 인증으로 전환하는 것이 아니다. token이 없으면 provider 호출 전에 재인증 필요 상태를 명확히 반환해야 한다.
@@ -112,7 +112,7 @@ fallback은 조용히 mock 인증으로 전환하는 것이 아니다. token이 
 | token exchange 성공 | mock token response 반환 | 필요한 필드만 추출해 `saveOAuthTokens()`를 호출한다. |
 | token exchange 응답에 추가 필드 포함 | `scope`, `token_type`, provider raw payload 포함 | 저장 schema에는 허용된 필드만 들어간다. |
 | token 저장 실패 | `saveOAuthTokens()` 실패 mock | OAuth 인증 성공으로 처리하지 않고 안전한 오류를 반환한다. |
-| provider 이름 전달 | `gemini oauth` flow | `gemini` provider scope 아래 저장된다. |
+| provider 이름 전달 | `antigravity oauth` flow | `antigravity` provider scope 아래 저장된다. |
 
 ## 보안 회귀 테스트
 
