@@ -62,7 +62,7 @@ export async function getValidAccessToken(provider, config)
 ```json
 {
   "oauth": {
-    "gemini": {
+    "antigravity": {
       "accessToken": "[REDACTED]",
       "refreshToken": "[REDACTED]",
       "expiresAt": "2026-05-19T09:00:00.000Z"
