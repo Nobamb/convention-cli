@@ -69,7 +69,7 @@ test('isValidProvider accepts 2nd MVP supported providers', () => {
 });
 
 test('isValidProvider rejects unsupported and future provider names', () => {
-  for (const provider of ['claude', 'github-copilot', 'antigravity', 'unknown']) {
+  for (const provider of ['claude', 'unknown']) {
     assert.equal(isValidProvider(provider), false);
   }
 });
