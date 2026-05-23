@@ -2,6 +2,8 @@ import {
   PROVIDERS,
   SUPPORTED_LANGUAGES,
   SUPPORTED_MODES,
+  STABLE_PROVIDERS,
+  EXPERIMENTAL_PROVIDERS,
 } from "../config/defaults.js";
 
 export function isValidMode(mode) {
@@ -12,8 +14,18 @@ export function isValidLanguage(language) {
   return SUPPORTED_LANGUAGES.includes(language);
 }
 
+/**
+ * 지정한 provider가 지원되는 AI Provider인지 확인합니다.
+ * 2차 MVP 기본 제공 모델 외에도 OAuth 연동 대상인 github-copilot, antigravity 등을 유효한 모델로 허용합니다.
+ * 
+ * @param {string} provider - 검증할 AI Provider 이름
+ * @returns {boolean} 지원 여부
+ */
 export function isValidProvider(provider) {
-  return PROVIDERS.includes(provider);
+  return (
+    PROVIDERS.includes(provider) ||
+    ["antigravity", "github-copilot"].includes(provider)
+  );
 }
 
 /**
