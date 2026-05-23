@@ -2,16 +2,40 @@ import * as mockProvider from "./mock.js";
 import * as localLLMProvider from "./localLLM.js";
 import * as geminiProvider from "./gemini.js";
 import * as openaiCompatibleProvider from "./openai-compatible.js";
+import * as antigravityProvider from "./antigravity.js";
+import * as githubCopilotProvider from "./github-copilot.js";
+import { getValidAccessToken } from "../auth/oauth.js";
 
 /**
  * 지원하는 AI Provider 모듈들의 레지스트리입니다.
+ * 신규로 추가된 antigravity 및 github-copilot OAuth 대응 모델을 등록합니다.
  */
 const PROVIDER_MODULES = {
   mock: mockProvider,
   localLLM: localLLMProvider,
   gemini: geminiProvider,
   openaiCompatible: openaiCompatibleProvider,
+  antigravity: antigravityProvider,
+  "github-copilot": githubCopilotProvider,
 };
+
+/**
+ * OAuth 인증 방식이 활성화되었을 때 유효한 Access Token을 로드하여 Authorization Bearer 헤더를 구성합니다.
+ * 만료된 경우 내부에서 자동으로 Refresh Token을 전송하여 토큰을 갱신합니다.
+ *
+ * @param {object} config - 사용자 설정
+ * @returns {Promise<object>} 구성 완료된 HTTP 헤더 객체
+ */
+async function resolveOAuthHeaders(config) {
+  if (config.authType === "oauth") {
+    // 유효한 액세스 토큰 획득 (만료 시 자동 리프레시 실행)
+    const token = await getValidAccessToken(config.provider, config);
+    return {
+      Authorization: `Bearer ${token}`,
+    };
+  }
+  return {};
+}
 
 /**
  * 설정된 provider 이름에 해당하는 모듈을 반환합니다.
@@ -40,14 +64,27 @@ export function getProvider(providerName) {
 
 /**
  * 지정된 provider를 통해 커밋 메시지를 생성합니다.
+ * authType이 oauth인 경우 갱신/검증된 OAuth Header를 인젝션하여 전달합니다.
+ *
  * @param {object} params
  * @param {string} params.prompt - AI에게 전달할 프롬프트
  * @param {object} params.config - 사용자 설정 (provider 포함)
- * @returns {Promise<string>} 생성된 커밋 메시스
+ * @returns {Promise<string>} 생성된 커밋 메시지
  */
 export async function generateWithProvider({ prompt, config = {} }) {
-  const provider = getProvider(config.provider);
-  return provider.generateCommitMessage({ prompt, config });
+  const providerName = config.provider ?? "mock";
+  const provider = getProvider(providerName);
+
+  // OAuth 인증을 지원하지 않는 Provider(예: mock, localLLM 등)에서 oauth를 시도하면 오류로 차단합니다.
+  if (config.authType === "oauth" && !["github", "github-copilot", "antigravity"].includes(providerName)) {
+    throw new Error(`Provider "${providerName}" does not support OAuth authentication.`);
+  }
+
+  // OAuth 인증 헤더 해결
+  const oauthHeaders = await resolveOAuthHeaders(config);
+  
+  // 헤더를 함께 주입하여 provider에 위임합니다.
+  return provider.generateCommitMessage({ prompt, config, headers: oauthHeaders });
 }
 
 /**
@@ -59,13 +96,22 @@ export async function generateWithProvider({ prompt, config = {} }) {
  * @returns {Promise<string[]>} 모델 목록 (지원하지 않는 경우 빈 배열)
  */
 export async function listProviderModels(config = {}) {
-  const provider = getProvider(config.provider);
+  const providerName = config.provider ?? "mock";
+  const provider = getProvider(providerName);
+
+  // OAuth 인증을 지원하지 않는 Provider에서 oauth를 시도하면 오류로 차단합니다.
+  if (config.authType === "oauth" && !["github", "github-copilot", "antigravity"].includes(providerName)) {
+    throw new Error(`Provider "${providerName}" does not support OAuth authentication.`);
+  }
 
   // listModels 인터페이스는 선택 사항(Optional)입니다.
   if (typeof provider.listModels !== "function") {
     return [];
   }
 
+  // OAuth 인증 헤더 해결
+  const oauthHeaders = await resolveOAuthHeaders(config);
+
   // 모델 목록 반환
-  return provider.listModels(config);
+  return provider.listModels(config, { headers: oauthHeaders });
 }
