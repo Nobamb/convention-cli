@@ -16,8 +16,9 @@ export const CREDENTIALS_FILE_PATH = path.join(CONFIG_DIR, "credentials.json");
 // 설정 저장 전에 필요한 디렉터리가 있는지 확인하고, 없으면 재귀적으로 생성합니다.
 // path.join()으로 만든 CONFIG_DIR을 그대로 사용해 Windows/macOS/Linux 경로 차이를 피합니다.
 export function ensureConfigDir() {
-  if (!fs.existsSync(CONFIG_DIR)) {
-    fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  const currentConfigDir = path.join(os.homedir(), ".config", "convention");
+  if (!fs.existsSync(currentConfigDir)) {
+    fs.mkdirSync(currentConfigDir, { recursive: true });
   }
 }
 
@@ -48,9 +49,10 @@ export function saveConfig(config) {
     });
   }
 
+  const currentConfigFile = path.join(os.homedir(), ".config", "convention", "config.json");
   // 저장 직전에 migration을 적용해 config.json이 항상 최신 schema와 secret 제거 규칙을 따르게 합니다.
   fs.writeFileSync(
-    CONFIG_FILE_PATH,
+    currentConfigFile,
     JSON.stringify(migrateConfig(config), null, 2),
     "utf8",
   );
@@ -162,16 +164,17 @@ export function hardenCredentialsFilePermissions(filePath, options = {}) {
 
 // 설정 파일이 없거나 읽을 수 없으면 CLI가 중단되지 않도록 기본 설정값을 반환합니다.
 export function loadConfig() {
+  const currentConfigFile = path.join(os.homedir(), ".config", "convention", "config.json");
   // 사용자 설정 파일은 직접 수정될 수 있으므로, 읽기와 JSON 변환 전체를 안전하게 감쌉니다.
   try {
     // 아직 설정 파일이 생성되지 않은 첫 실행 상태에서는 기본 설정만으로도 CLI가 동작해야 합니다.
-    if (!fs.existsSync(CONFIG_FILE_PATH)) {
+    if (!fs.existsSync(currentConfigFile)) {
       // DEFAULT_CONFIG를 직접 반환하지 않고 migrateConfig()를 거쳐 schema 보정 규칙을 한곳으로 모읍니다.
       return migrateConfig();
     }
 
     // 설정 파일은 한글 등 다국어 값을 포함할 수 있으므로 UTF-8 인코딩을 명시해서 읽습니다.
-    const rawConfig = fs.readFileSync(CONFIG_FILE_PATH, "utf8");
+    const rawConfig = fs.readFileSync(currentConfigFile, "utf8");
 
     // 디스크에 저장된 JSON 문자열을 실제 설정 객체로 변환합니다.
     const userConfig = JSON.parse(rawConfig);
@@ -206,15 +209,16 @@ export function loadConfig() {
  * @returns {Object}
  */
 export function loadCredentials() {
+  const currentCredentialsFile = path.join(os.homedir(), ".config", "convention", "credentials.json");
   // 사용자 자격 증명 파일은 직접 수정될 수 있으므로, 읽기와 JSON 변환 전체를 안전하게 감싼다.
   try {
     // 아직 자격 증명 파일이 생성되지 않은 첫 실행 상태에서는 빈 객체를 반환한다.
-    if (!fs.existsSync(CREDENTIALS_FILE_PATH)) {
+    if (!fs.existsSync(currentCredentialsFile)) {
       return {};
     }
 
     // 자격 증명 파일은 한글 등 다국어 값을 포함할 수 있으므로 UTF-8 인코딩을 명시해서 읽는다.
-    const rawCredentials = fs.readFileSync(CREDENTIALS_FILE_PATH, "utf8");
+    const rawCredentials = fs.readFileSync(currentCredentialsFile, "utf8");
     // 디스크에 저장된 JSON 문자열을 실제 자격 증명 객체로 변환한다.
     const credentials = JSON.parse(rawCredentials);
 
@@ -230,7 +234,7 @@ export function loadCredentials() {
 
     // 저장된 사용자 자격 증명을 반환한다.
     return credentials;
-  } catch {
+  } catch (error) {
     // 자격 증명 파일 읽기/파싱 중 오류가 발생하면 빈 객체를 반환한다.
     return {};
   }
@@ -253,13 +257,14 @@ export function saveCredentials(credentials) {
       ? credentials
       : {};
 
+  const currentCredentialsFile = path.join(os.homedir(), ".config", "convention", "credentials.json");
   // 자격 증명 객체를 JSON 문자열로 변환하여 자격 증명 파일에 저장한다.
   // 저장할 때 한글 등 다국어 값을 위해 UTF-8 인코딩을 명시한다.
   fs.writeFileSync(
-    CREDENTIALS_FILE_PATH,
+    currentCredentialsFile,
     JSON.stringify(safeCredentials, null, 2),
     "utf8",
   );
   // 자격 증명 파일의 권한을 읽기와 쓰기만 가능하도록 제한한다.
-  hardenCredentialsFilePermissions(CREDENTIALS_FILE_PATH);
+  hardenCredentialsFilePermissions(currentCredentialsFile);
 }
