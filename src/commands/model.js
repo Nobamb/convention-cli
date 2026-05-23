@@ -1,6 +1,7 @@
 import { DEFAULT_LOCAL_LLM_BASE_URL, PROVIDERS } from "../config/defaults.js";
 import { loadConfig, saveConfig } from "../config/store.js";
 import { getApiKey, promptApiKey, saveApiKey } from "../auth/apiKey.js";
+import { startOAuthFlow } from "../auth/oauth.js";
 import { listProviderModels } from "../providers/index.js";
 import { isUsageExhaustedError } from "../providers/errors.js";
 import { normalizeLocalLLMConfig } from "../providers/localLLM.js";
@@ -81,6 +82,8 @@ const SUPPORTED_AUTH_TYPES_BY_PROVIDER = {
   localLLM: ["none"],
   gemini: ["api"],
   openaiCompatible: ["api", "none"],
+  antigravity: ["oauth"],
+  "github-copilot": ["oauth"],
 };
 
 /**
@@ -92,6 +95,8 @@ const DEFAULT_MODEL_VERSION_BY_PROVIDER = {
   mock: "mock",
   gemini: "gemini-3-flash-preview",
   openaiCompatible: "latest",
+  antigravity: "antigravity-1",
+  "github-copilot": "copilot-codex",
 };
 
 /**
@@ -213,6 +218,22 @@ async function ensureApiCredentials(
   // 입력값은 credentials.json으로만 저장하고 config.json에는 병합하지 않습니다.
   const apiKey = await promptApiKey(provider);
   saveApiKey(provider, apiKey);
+}
+
+/**
+ * API Key 혹은 OAuth 인증을 유형에 맞게 조율하여 자격 증명을 획득합니다.
+ * 
+ * @param {string} provider - AI provider 이름
+ * @param {string} authType - 인증 타입 (api, oauth, none)
+ * @param {object} options - 추가 옵션
+ */
+async function ensureCredentials(provider, authType, { promptForExistingKey = true } = {}) {
+  if (authType === "api") {
+    await ensureApiCredentials(provider, authType, { promptForExistingKey });
+  } else if (authType === "oauth") {
+    // OAuth 인증의 경우, startOAuthFlow를 호출하여 인증 및 토큰 저장을 마칩니다.
+    await startOAuthFlow({ provider });
+  }
 }
 
 /**
@@ -455,8 +476,8 @@ export async function setupModelInteractively({
     throw new Error("External provider model list request was canceled.");
   }
 
-  // 3. API Key 입력 (필요 시)
-  await ensureApiCredentials(selectedProvider, selectedAuthType, {
+  // 3. 자격 증명 확보 (API Key 입력 또는 OAuth 로그인 실행)
+  await ensureCredentials(selectedProvider, selectedAuthType, {
     promptForExistingKey: !handledExistingApiKey,
   });
 
@@ -540,7 +561,7 @@ export async function setupModelDirectly(provider, authType, modelVersion) {
 
   const config = loadConfig();
 
-  await ensureApiCredentials(provider, authType);
+  await ensureCredentials(provider, authType);
 
   const nextConfig = buildModelConfig(config, {
     provider,
