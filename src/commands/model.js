@@ -570,7 +570,7 @@ export async function setupModelDirectly(provider, authType, modelVersion) {
   });
 
   saveConfig(nextConfig);
-  success(`${provider} 紐⑤뜽 ?ㅼ젙????λ릺?덉뒿?덈떎.`);
+  success(`${provider} 모델 설정이 저장되었습니다.`);
 
   return nextConfig;
 }
