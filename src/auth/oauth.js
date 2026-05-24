@@ -288,10 +288,15 @@ export async function startOAuthFlow({ provider, config = {} }) {
     const browserLauncher = config.browserLauncher || launchBrowser;
     const launchSuccess = shouldOpen ? browserLauncher(authorizationUrl) : false;
 
-    if (!launchSuccess && config.printAuthorizationUrl !== false) {
+    if (!launchSuccess && config.printAuthorizationUrl === true) {
       info("\nOpen this URL in your browser to continue OAuth login:\n");
       console.log(authorizationUrl);
       info("\nReturn to the terminal after login completes.\n");
+    } else if (!launchSuccess) {
+      // OAuth authorization URL에는 access token은 없지만 CSRF 방어용 state와 PKCE challenge가 들어갑니다.
+      // 터미널 출력이 CI 로그나 쉘 히스토리 수집 대상으로 남을 수 있으므로, 명시적으로 허용한 경우가 아니면 URL을 출력하지 않습니다.
+      // 브라우저 실행이 실패한 상태에서 계속 대기하면 사용자가 callback을 완료할 수 없으므로 안전하게 중단합니다.
+      throw new Error("OAuth browser launch was not completed. No authorization URL was printed.");
     }
 
     const receivedData = await callbackServer.waitForCallback();
