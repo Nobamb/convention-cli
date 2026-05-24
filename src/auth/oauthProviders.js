@@ -33,16 +33,20 @@ export const OAUTH_PROVIDERS = {
   },
   antigravity: {
     provider: "antigravity",
-    authUrl: "https://accounts.antigravity.ai/o/oauth2/v2/auth",
-    tokenUrl: "https://oauth2.antigravity.ai/token",
-    scopes: ["https://api.antigravity.ai/auth/cli"],
+    // Antigravity OAuth endpoint는 공식 문서로 검증되기 전까지 추정 URL을 넣지 않습니다.
+    // registry에는 남겨 token store namespace를 통제하되, 실제 OAuth flow는 oauthAvailable=false로 차단합니다.
+    authUrl: null,
+    tokenUrl: null,
+    scopes: [],
     client: {
       idEnv: "CONVENTION_ANTIGRAVITY_CLIENT_ID",
       secretEnv: "CONVENTION_ANTIGRAVITY_CLIENT_SECRET",
       requiresSecret: true,
     },
     supportsPKCE: true,
-    supportsRefresh: true,
+    supportsRefresh: false,
+    oauthAvailable: false,
+    requiresExperimentalOptIn: true,
     defaultRedirectPort: 8766,
   },
 };
@@ -90,6 +94,12 @@ export function listOAuthProviders() {
 export function validateOAuthProviderConfig(provider, config) {
   if (!config) {
     throw new Error(`[${provider}] Provider configuration is missing`);
+  }
+
+  // Antigravity처럼 registry에는 있지만 공식 endpoint가 검증되지 않은 provider는
+  // 안정 OAuth 설정 검증 대상에서 제외하고, 실제 flow는 호출부에서 명확히 차단합니다.
+  if (config.oauthAvailable === false) {
+    return true;
   }
 
   // 1. URL 검증 (authUrl, tokenUrl)
