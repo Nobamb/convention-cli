@@ -5,6 +5,7 @@ import * as openaiCompatibleProvider from "./openai-compatible.js";
 import * as antigravityProvider from "./antigravity.js";
 import * as githubCopilotProvider from "./github-copilot.js";
 import { getValidAccessToken } from "../auth/oauth.js";
+import { getOAuthProviderConfig } from "../auth/oauthProviders.js";
 
 /**
  * 지원하는 AI Provider 모듈들의 레지스트리입니다.
@@ -28,6 +29,8 @@ const PROVIDER_MODULES = {
  */
 async function resolveOAuthHeaders(config) {
   if (config.authType === "oauth") {
+    // OAuth provider registry를 먼저 검증해 임의 provider 이름으로 저장된 token 사용을 막습니다.
+    getOAuthProviderConfig(config.provider);
     // 유효한 액세스 토큰 획득 (만료 시 자동 리프레시 실행)
     const token = await getValidAccessToken(config.provider, config);
     return {
@@ -75,9 +78,10 @@ export async function generateWithProvider({ prompt, config = {} }) {
   const providerName = config.provider ?? "mock";
   const provider = getProvider(providerName);
 
-  // OAuth 인증을 지원하지 않는 Provider(예: mock, localLLM 등)에서 oauth를 시도하면 오류로 차단합니다.
-  if (config.authType === "oauth" && !["github", "github-copilot", "antigravity"].includes(providerName)) {
-    throw new Error(`Provider "${providerName}" does not support OAuth authentication.`);
+  // OAuth 지원 여부는 OAuth provider registry가 단일 진실 공급원입니다.
+  // 등록되지 않은 provider는 조용한 fallback 없이 명확히 중단합니다.
+  if (config.authType === "oauth") {
+    getOAuthProviderConfig(providerName);
   }
 
   // OAuth 인증 헤더 해결
@@ -99,9 +103,9 @@ export async function listProviderModels(config = {}) {
   const providerName = config.provider ?? "mock";
   const provider = getProvider(providerName);
 
-  // OAuth 인증을 지원하지 않는 Provider에서 oauth를 시도하면 오류로 차단합니다.
-  if (config.authType === "oauth" && !["github", "github-copilot", "antigravity"].includes(providerName)) {
-    throw new Error(`Provider "${providerName}" does not support OAuth authentication.`);
+  // 모델 목록 조회도 OAuth registry를 통과한 provider에만 token header를 붙입니다.
+  if (config.authType === "oauth") {
+    getOAuthProviderConfig(providerName);
   }
 
   // listModels 인터페이스는 선택 사항(Optional)입니다.
