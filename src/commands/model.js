@@ -230,12 +230,16 @@ async function ensureApiCredentials(
 
 /**
  * API Key 혹은 OAuth 인증을 유형에 맞게 조율하여 자격 증명을 획득합니다.
- * 
+ *
  * @param {string} provider - AI provider 이름
  * @param {string} authType - 인증 타입 (api, oauth, none)
  * @param {object} options - 추가 옵션
  */
-async function ensureCredentials(provider, authType, { promptForExistingKey = true } = {}) {
+async function ensureCredentials(
+  provider,
+  authType,
+  { promptForExistingKey = true } = {},
+) {
   if (authType === "api") {
     await ensureApiCredentials(provider, authType, { promptForExistingKey });
   } else if (authType === "oauth") {
@@ -304,7 +308,9 @@ async function resolveInteractiveModelVersionWithRecovery(config) {
       // 429(사용량 소진)가 아니더라도 모델 목록을 가져오지 못했다면(연결 실패 등)
       // 사용자에게 설정을 수정하거나 재시도할 기회를 주는 것이 좋습니다.
       if (is429) {
-        warn("모델 목록 조회 중 AI Provider 사용량 한도 또는 rate limit에 도달했습니다.");
+        warn(
+          "모델 목록 조회 중 AI Provider 사용량 한도 또는 rate limit에 도달했습니다.",
+        );
       } else {
         warn(`모델 목록을 가져오지 못했습니다: ${error.message}`);
       }
@@ -556,33 +562,49 @@ export async function setupModelWithProviderAndAuth(provider, authType) {
  * Provider, authType, modelVersion을 모두 CLI 인자로 받은 Phase S 흐름입니다.
  * 모든 값이 이미 주어졌으므로 select UI와 모델 목록 조회 없이 검증과 credentials 확인 후 config를 저장합니다.
  *
- * @param {string} provider
- * @param {string} authType
- * @param {string} modelVersion
- * @returns {Promise<object>}
+ * @param {string} provider - ai 모델 제공자
+ * @param {string} authType - 인증 방식
+ * @param {string} modelVersion - 모델 버전
+ * @returns {Promise<object>} - 설정이 완료된 config 객체
  */
 export async function setupModelDirectly(provider, authType, modelVersion) {
+  // Provider 검증
   assertProvider(provider);
+  // AuthType 검증
   assertAuthType(authType);
+  // Provider AuthType 검증
   assertProviderAuthType(provider, authType);
+  // ModelVersion 검증
   assertModelVersion(modelVersion);
 
+  // Config 파일 불러오기
   const config = loadConfig();
 
+  // AuthType에 따라 자격 증명 획득
   await ensureCredentials(provider, authType);
 
+  // Config 빌드
   const nextConfig = buildModelConfig(config, {
     provider,
     authType,
     modelVersion: modelVersion.trim(),
   });
 
+  // 설정 저장
   saveConfig(nextConfig);
+  // 성공 메시지 출력
   success(`${provider} 모델 설정이 저장되었습니다.`);
-
+  // 설정 객체 반환
   return nextConfig;
 }
 
+/**
+ * Model 커맨드 실행을 위한 메인 엔드포인트로, CLI 인자에 따라 setupModelDirectly, setupModelWithProviderAndAuth, setupModelWithProvider, setupModelInteractively를 호출합니다.
+ * @param {string} provider - ai 모델 제공자
+ * @param {string} authType - 인증 방식
+ * @param {string} modelVersion - 모델 버전
+ * @returns {Promise<object>} - 설정이 완료된 config 객체
+ */
 export async function runModelSetup(provider, authType, modelVersion) {
   // modelVersion까지 모두 전달된 경우에는 자동화 환경에서 사용할 수 있도록 UI 없이 직접 저장합니다.
   if (modelVersion !== undefined) {
