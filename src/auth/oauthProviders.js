@@ -3,50 +3,82 @@
  * 보안 유지를 위해 Client ID 및 Client Secret 원문은 코드에 기록하지 않고 환경 변수 키 정보만 둡니다.
  */
 export const OAUTH_PROVIDERS = {
+  // 깃허브에 관한 설정들을 모아둔 곳입니다.
+  // 추후에 깃허브와 관련된 기능이 추가된다면 이곳에 추가하면 됩니다.
   github: {
+    // 깃허브에 대한 설정
     provider: "github",
+    // 깃허브 로그인 페이지로 보내는 url입니다.
     authUrl: "https://github.com/login/oauth/authorize",
+    // 깃허브 액세스 토큰을 발급받는 url입니다.
     tokenUrl: "https://github.com/login/oauth/access_token",
+    // 깃허브 액세스 토큰 발급 시 필요한 스코프입니다.
     scopes: ["read:user"],
+    // 깃허브 클라이언트 아이디와 클라이언트 시크릿을 저장하는 객체입니다.
     client: {
       idEnv: "CONVENTION_GITHUB_CLIENT_ID",
       secretEnv: "CONVENTION_GITHUB_CLIENT_SECRET",
       requiresSecret: true,
     },
+    // PKCE 사용 여부
     supportsPKCE: true,
+    // 토큰 갱신 여부
     supportsRefresh: false,
+    // 기본 리다이렉트 포트
     defaultRedirectPort: 8765,
   },
+  // 깃허브 코파일럿에 관한 설정들을 모아둔 곳입니다.
+  // 추후에 깃허브 코파일럿과 관련된 기능이 추가된다면 이곳에 추가하면 됩니다.
   "github-copilot": {
+    // 깃허브 코파일럿에 대한 설정
     provider: "github-copilot",
+    // 깃허브 코파일럿 로그인 페이지로 보내는 url입니다.
     authUrl: "https://github.com/login/oauth/authorize",
+    // 깃허브 코파일럿 액세스 토큰을 발급받는 url입니다.
     tokenUrl: "https://github.com/login/oauth/access_token",
+    // 깃허브 코파일럿 액세스 토큰 발급 시 필요한 스코프입니다.
     scopes: ["read:user"],
+    // 깃허브 코파일럿 클라이언트 아이디와 클라이언트 시크릿을 저장하는 객체입니다.
     client: {
       idEnv: "CONVENTION_GITHUB_CLIENT_ID",
       secretEnv: "CONVENTION_GITHUB_CLIENT_SECRET",
       requiresSecret: true,
     },
+    // PKCE 사용 여부
     supportsPKCE: true,
+    // 토큰 갱신 여부
     supportsRefresh: false,
+    // 기본 리다이렉트 포트
     defaultRedirectPort: 8765,
   },
+  // 구글 antigravity에 관한 설정들을 모아둔 곳입니다.
+  // 추후에 구글과 관련된 기능이 추가된다면 이곳에 추가하면 됩니다.
   antigravity: {
+    // 구글 antigravity에 대한 설정
     provider: "antigravity",
     // Antigravity OAuth endpoint는 공식 문서로 검증되기 전까지 추정 URL을 넣지 않습니다.
     // registry에는 남겨 token store namespace를 통제하되, 실제 OAuth flow는 oauthAvailable=false로 차단합니다.
+    // 구글 antigravity 로그인 페이지로 보내는 url입니다.
     authUrl: null,
+    // 구글 antigravity 액세스 토큰을 발급받는 url입니다.
     tokenUrl: null,
+    // 구글 antigravity 액세스 토큰 발급 시 필요한 스코프입니다.
     scopes: [],
+    // 구글 antigravity 클라이언트 아이디와 클라이언트 시크릿을 저장하는 객체입니다.
     client: {
       idEnv: "CONVENTION_ANTIGRAVITY_CLIENT_ID",
       secretEnv: "CONVENTION_ANTIGRAVITY_CLIENT_SECRET",
       requiresSecret: true,
     },
+    // PKCE 사용 여부
     supportsPKCE: true,
+    // 토큰 갱신 여부
     supportsRefresh: false,
+    // OAuth 사용 가능 여부
     oauthAvailable: false,
+    // 실험적 기능 사용 여부
     requiresExperimentalOptIn: true,
+    // 기본 리다이렉트 포트
     defaultRedirectPort: 8766,
   },
 };
@@ -60,12 +92,18 @@ export const OAUTH_PROVIDERS = {
  * @throws {Error} provider가 제공되지 않거나 지원하지 않는 경우
  */
 export function getOAuthProviderConfig(provider) {
-  if (!provider || typeof provider !== "string" || provider.trim().length === 0) {
+  // provider가 없거나 문자열이 아니거나 공백으로 구성되어 있으면 에러를 던집니다.
+  if (
+    !provider ||
+    typeof provider !== "string" ||
+    provider.trim().length === 0
+  ) {
     throw new Error("OAuth provider is required");
   }
 
   // canonical name 비교를 위해 대소문자가 다르게 들어오는 경우를 정규화하지 않고 엄격하게 거부합니다.
   const config = OAUTH_PROVIDERS[provider];
+  // provider가 존재하지 않으면 에러를 던집니다.
   if (!config) {
     throw new Error(`Unsupported OAuth provider: ${provider}`);
   }
@@ -92,6 +130,7 @@ export function listOAuthProviders() {
  * @throws {Error} 설정이 유효하지 않을 경우
  */
 export function validateOAuthProviderConfig(provider, config) {
+  // provider가 없으면 에러를 던집니다.
   if (!config) {
     throw new Error(`[${provider}] Provider configuration is missing`);
   }
@@ -104,12 +143,15 @@ export function validateOAuthProviderConfig(provider, config) {
 
   // 1. URL 검증 (authUrl, tokenUrl)
   for (const field of ["authUrl", "tokenUrl"]) {
+    // authUrl과 tokenUrl을 가져옵니다.
     const urlValue = config[field];
+    // urlValue가 문자열이 아니거나 공백이면 에러를 던집니다.
     if (typeof urlValue !== "string" || urlValue.trim().length === 0) {
       throw new Error(`[${provider}] ${field} is missing or empty`);
     }
 
     try {
+      // authUrl과 tokenUrl을 파싱합니다.
       const parsedUrl = new URL(urlValue);
       // 운영 환경용 provider는 보안상 반드시 https 프로토콜을 사용해야 합니다.
       if (parsedUrl.protocol !== "https:") {
@@ -117,35 +159,48 @@ export function validateOAuthProviderConfig(provider, config) {
       }
     } catch (error) {
       // 에러 메시지에 민감 정보(query parameters 등)가 직접 노출되지 않도록 에러를 정화하여 던집니다.
-      throw new Error(`[${provider}] ${field} is an invalid URL: ${field} must be a valid HTTPS URL`);
+      throw new Error(
+        `[${provider}] ${field} is an invalid URL: ${field} must be a valid HTTPS URL`,
+      );
     }
   }
 
   // 2. Scopes 검증
   const scopes = config.scopes;
+  // scopes가 배열이 아니면 에러를 던집니다.
   if (!Array.isArray(scopes)) {
     throw new Error(`[${provider}] scopes must be an array`);
   }
+  // scopes에 내용이 없으면 에러를 던집니다.
   if (scopes.length === 0) {
     throw new Error(`[${provider}] scopes must contain at least one scope`);
   }
 
+  // 스코프 중복 방지를 위해 Set을 생성합니다.
   const seenScopes = new Set();
+  // 중복이 제거된 정규화된 스코프를 저장할 배열을 생성합니다.
   const normalizedScopes = [];
 
+  // 각 스코프를 순회합니다.
   for (const scope of scopes) {
+    // 스코프가 문자열이 아니거나 공백이면 에러를 던집니다.
     if (typeof scope !== "string" || scope.trim().length === 0) {
       throw new Error(`[${provider}] scope items must be non-empty strings`);
     }
 
     // 민감한 정보(TOKEN, KEY, PW 등)가 포함되어 의심스러운 형태의 scope 문자열은 거절합니다.
-    if (scope.toUpperCase().includes("TOKEN=") || scope.toUpperCase().includes("SECRET=")) {
+    if (
+      scope.toUpperCase().includes("TOKEN=") ||
+      scope.toUpperCase().includes("SECRET=")
+    ) {
       throw new Error(`[${provider}] scope contains highly sensitive pattern`);
     }
 
     // 중복 scope 제거하면서 순서 유지 (unique array)
     if (!seenScopes.has(scope)) {
+      // 스코프를 Set에 추가합니다.
       seenScopes.add(scope);
+      // 정규화된 스코프에 추가합니다.
       normalizedScopes.push(scope);
     }
   }
@@ -165,28 +220,39 @@ export function validateOAuthProviderConfig(provider, config) {
  * @throws {Error} 필수 환경 변수가 정의되지 않았을 경우
  */
 export function buildOAuthClientSettings(provider, env = process.env) {
+  // provider에 해당하는 설정을 가져옵니다.
   const config = getOAuthProviderConfig(provider);
+  // client 설정을 가져옵니다.
   const clientConfig = config.client;
 
+  // clientConfig가 존재하지 않으면 에러를 던집니다.
   if (!clientConfig) {
     throw new Error(`[${provider}] Client configuration metadata is missing`);
   }
 
+  // Client ID를 환경 변수에서 가져옵니다.
   const clientId = env[clientConfig.idEnv];
+  // Client Secret을 환경 변수에서 가져옵니다.
   const clientSecret = env[clientConfig.secretEnv];
 
   // Client ID는 반드시 존재해야 합니다.
   if (typeof clientId !== "string" || clientId.trim().length === 0) {
-    throw new Error(`[${provider}] OAuth Client ID environment variable (${clientConfig.idEnv}) is missing`);
+    throw new Error(
+      `[${provider}] OAuth Client ID environment variable (${clientConfig.idEnv}) is missing`,
+    );
   }
 
   // confidential client의 경우 Client Secret이 반드시 필요합니다.
   if (clientConfig.requiresSecret) {
+    // clientSecret이 문자열이 아니거나 공백이면 에러를 던집니다.
     if (typeof clientSecret !== "string" || clientSecret.trim().length === 0) {
-      throw new Error(`[${provider}] OAuth Client Secret environment variable (${clientConfig.secretEnv}) is missing`);
+      throw new Error(
+        `[${provider}] OAuth Client Secret environment variable (${clientConfig.secretEnv}) is missing`,
+      );
     }
   }
 
+  // Client ID와 Client Secret을 반환합니다.
   return {
     clientId: clientId.trim(),
     clientSecret: clientSecret ? clientSecret.trim() : undefined,
