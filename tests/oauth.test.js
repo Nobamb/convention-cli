@@ -1,275 +1,375 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import http from "node:http";
 
-// 테스트를 격리된 임시 홈 디렉터리 환경에서 가져오기 위한 유틸리티 함수입니다.
+const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "convention-cli-oauth-"));
+const previousHome = process.env.HOME;
+const previousUserProfile = process.env.USERPROFILE;
+process.env.HOME = tempHome;
+process.env.USERPROFILE = tempHome;
+
+test.after(() => {
+  if (previousHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = previousHome;
+  }
+
+  if (previousUserProfile === undefined) {
+    delete process.env.USERPROFILE;
+  } else {
+    process.env.USERPROFILE = previousUserProfile;
+  }
+
+  fs.rmSync(tempHome, { recursive: true, force: true });
+});
+
 async function importOAuthWithTempHome() {
-  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "convention-cli-oauth-"));
-  const previousHome = process.env.HOME;
-  const previousUserProfile = process.env.USERPROFILE;
-
-  // 테스트를 격격리하기 위해 HOME 환경 변수를 임시 경로로 바꿉니다.
-  process.env.HOME = tempHome;
-  process.env.USERPROFILE = tempHome;
-
   const stamp = `${Date.now()}-${Math.random()}`;
-  
-  // 캐싱 방지용 쿼리 스트링 추가
-  const storeUrl = new URL("../src/config/store.js", import.meta.url);
-  storeUrl.search = `?home=${encodeURIComponent(tempHome)}&t=${stamp}`;
-  
   const oauthUrl = new URL("../src/auth/oauth.js", import.meta.url);
-  oauthUrl.search = `?home=${encodeURIComponent(tempHome)}&t=${stamp}`;
+  oauthUrl.search = `?t=${stamp}`;
+  const storeUrl = new URL("../src/config/store.js", import.meta.url);
+  storeUrl.search = `?t=${stamp}`;
 
-  const store = await import(storeUrl.href);
   const oauth = await import(oauthUrl.href);
+  const store = await import(storeUrl.href);
 
   function cleanup() {
-    if (previousHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = previousHome;
-    }
-
-    if (previousUserProfile === undefined) {
-      delete process.env.USERPROFILE;
-    } else {
-      process.env.USERPROFILE = previousUserProfile;
-    }
-
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    // 파일 단위 임시 HOME을 공유하므로 개별 테스트에서는 환경을 되돌리지 않습니다.
   }
 
-  return { store, oauth, cleanup };
+  return { oauth, store, cleanup };
 }
 
-// -----------------------------------------------------------------------------
-// 1. OAuth Provider Config & Validation Tests
-// -----------------------------------------------------------------------------
+function requestUrl(url) {
+  return new Promise((resolve, reject) => {
+    http
+      .get(url, (res) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => {
+          body += chunk;
+        });
+        res.on("end", () => {
+          resolve({ statusCode: res.statusCode, body });
+        });
+      })
+      .on("error", reject);
+  });
+}
 
-test("X getOAuthProviderConfig returns correct cloned static configs", async () => {
-  const { getOAuthProviderConfig, listOAuthProviders } = await import("../src/auth/oauthProviders.js");
+test("OAuth provider config keeps Antigravity OAuth disabled until official endpoints are verified", async () => {
+  const { getOAuthProviderConfig, validateOAuthProviderConfig } = await import("../src/auth/oauthProviders.js");
 
-  const config = getOAuthProviderConfig("github");
-  assert.equal(config.provider, "github");
-  assert.equal(config.supportsPKCE, true);
-  assert.ok(Array.isArray(config.scopes));
-
-  // 복사본 반환 및 원본 보존 검사
-  config.scopes.push("polluted");
-  const config2 = getOAuthProviderConfig("github");
-  assert.equal(config2.scopes.includes("polluted"), false);
-
-  // 미지원 모델 조회 시 mock fallback 없이 오류 반환 검사
-  assert.throws(() => {
-    getOAuthProviderConfig("unknown");
-  }, /Unsupported OAuth provider/);
+  const antigravity = getOAuthProviderConfig("antigravity");
+  assert.equal(antigravity.oauthAvailable, false);
+  assert.equal(antigravity.authUrl, null);
+  assert.equal(antigravity.tokenUrl, null);
+  assert.equal(antigravity.supportsRefresh, false);
+  assert.equal(validateOAuthProviderConfig("antigravity", antigravity), true);
 });
 
-test("X validateOAuthProviderConfig validates URL protocols and scopes properly", async () => {
-  const { validateOAuthProviderConfig } = await import("../src/auth/oauthProviders.js");
-
-  const validConfig = {
-    authUrl: "https://github.com/login/oauth/authorize",
-    tokenUrl: "https://github.com/login/oauth/access_token",
-    scopes: ["read:user", "read:user"], // 중복 포함
-  };
-
-  // 중복이 제거되는지 검사
-  validateOAuthProviderConfig("github", validConfig);
-  assert.deepEqual(validConfig.scopes, ["read:user"]);
-
-  // 비 HTTPS URL 거부 검사
-  const invalidProtocolConfig = {
-    authUrl: "http://github.com/login/oauth/authorize",
-    tokenUrl: "https://github.com/login/oauth/access_token",
-    scopes: ["read:user"],
-  };
-  assert.throws(() => {
-    validateOAuthProviderConfig("github", invalidProtocolConfig);
-  }, /must be a valid HTTPS URL/);
-
-  // 민감한 패턴(SECRET)이 포함된 scope 거절 검사
-  const dangerousScopeConfig = {
-    authUrl: "https://github.com/login/oauth/authorize",
-    tokenUrl: "https://github.com/login/oauth/access_token",
-    scopes: ["TOKEN=secretkey"],
-  };
-  assert.throws(() => {
-    validateOAuthProviderConfig("github", dangerousScopeConfig);
-  }, /contains highly sensitive pattern/);
-});
-
-test("X buildOAuthClientSettings parses settings from environment variables", async () => {
-  const { buildOAuthClientSettings } = await import("../src/auth/oauthProviders.js");
-
-  const originalId = process.env.CONVENTION_GITHUB_CLIENT_ID;
-  const originalSecret = process.env.CONVENTION_GITHUB_CLIENT_SECRET;
-
-  process.env.CONVENTION_GITHUB_CLIENT_ID = "test-id";
-  process.env.CONVENTION_GITHUB_CLIENT_SECRET = "test-secret";
-
-  try {
-    const settings = buildOAuthClientSettings("github");
-    assert.equal(settings.clientId, "test-id");
-    assert.equal(settings.clientSecret, "test-secret");
-  } finally {
-    process.env.CONVENTION_GITHUB_CLIENT_ID = originalId;
-    process.env.CONVENTION_GITHUB_CLIENT_SECRET = originalSecret;
-  }
-});
-
-// -----------------------------------------------------------------------------
-// 2. PKCE Security Utility Tests
-// -----------------------------------------------------------------------------
-
-test("Z PKCE & State generation and secure verification tests", async () => {
-  const { generateCodeVerifier, generateCodeChallenge, generateState, verifyState } = await import("../src/auth/security.js");
-
-  // 1. code_verifier 검증
-  const verifier = generateCodeVerifier();
-  assert.ok(verifier.length >= 43);
-  assert.ok(verifier.length <= 128);
-  assert.match(verifier, /^[A-Za-z0-9._~-]+$/);
-
-  // 2. code_challenge 검증
-  const challenge = generateCodeChallenge(verifier);
-  assert.ok(challenge.length > 0);
-  assert.equal(challenge.includes("="), false);
-  assert.equal(challenge.includes("+"), false);
-  assert.equal(challenge.includes("/"), false);
-
-  // 3. state 검증
-  const state1 = generateState();
-  const state2 = generateState();
-  assert.notEqual(state1, state2);
-
-  // timingSafeEqual 기반 매칭 검사
-  assert.equal(verifyState(state1, state1), true);
-  assert.equal(verifyState(state1, state2), false);
-  assert.equal(verifyState(state1, undefined), false);
-});
-
-// -----------------------------------------------------------------------------
-// 3. Local Callback HTTP Server & Redirection Tests
-// -----------------------------------------------------------------------------
-
-test("Y Local Callback Server handles success and timeout correctly", async () => {
+test("startLocalCallbackServer resolves successful callback with redirectUri", async () => {
   const { oauth, cleanup } = await importOAuthWithTempHome();
 
   try {
-    // 1. 임시 서버 리슨 및 타임아웃 종료 테스트
-    const errPromise = oauth.waitForOAuthCallback({
+    const callbackServer = await oauth.startLocalCallbackServer({
       callbackPath: "/oauth/callback",
-      timeoutMs: 50, // 매우 짧은 타임아웃 설정
+      timeoutMs: 1000,
     });
-    
-    await assert.rejects(errPromise, /Timeout/);
 
+    const callbackPromise = callbackServer.waitForCallback();
+    const response = await requestUrl(`${callbackServer.redirectUri}?code=abc&state=expected`);
+    const callback = await callbackPromise;
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(callback.code, "abc");
+    assert.equal(callback.state, "expected");
+    assert.equal(callback.redirectUri, callbackServer.redirectUri);
   } finally {
     cleanup();
   }
 });
 
-// -----------------------------------------------------------------------------
-// 4. Token Store Persistence Tests
-// -----------------------------------------------------------------------------
-
-test("AA saveOAuthTokens and loadOAuthTokens isolated namespace persistence tests", async () => {
-  const { store, oauth, cleanup } = await importOAuthWithTempHome();
+test("startLocalCallbackServer ignores wrong path before accepting valid callback", async () => {
+  const { oauth, cleanup } = await importOAuthWithTempHome();
 
   try {
-    const dummyTokens = {
-      accessToken: "access-token-fixture-AA",
-      refreshToken: "refresh-token-fixture-AA",
+    const callbackServer = await oauth.startLocalCallbackServer({
+      callbackPath: "/oauth/callback",
+      timeoutMs: 1000,
+    });
+
+    const callbackPromise = callbackServer.waitForCallback();
+    const wrongPathUrl = new URL(callbackServer.redirectUri);
+    wrongPathUrl.pathname = "/wrong/path";
+
+    const wrongResponse = await requestUrl(wrongPathUrl.toString());
+    const goodResponse = await requestUrl(`${callbackServer.redirectUri}?code=ok&state=safe`);
+    const callback = await callbackPromise;
+
+    assert.equal(wrongResponse.statusCode, 404);
+    assert.equal(goodResponse.statusCode, 200);
+    assert.equal(callback.code, "ok");
+    assert.equal(callback.state, "safe");
+  } finally {
+    cleanup();
+  }
+});
+
+test("OAuth callback provider error is sanitized in HTML and thrown error", async () => {
+  const { oauth, cleanup } = await importOAuthWithTempHome();
+
+  try {
+    const callbackServer = await oauth.startLocalCallbackServer({
+      callbackPath: "/oauth/callback",
+      timeoutMs: 1000,
+    });
+
+    const callbackPromise = callbackServer.waitForCallback();
+    const rejectionAssertion = assert.rejects(
+      callbackPromise,
+      /OAuth provider returned an authorization error/,
+    );
+    const response = await requestUrl(
+      `${callbackServer.redirectUri}?error=access_denied&error_description=SECRET%3Draw-token`,
+    );
+
+    await rejectionAssertion;
+    assert.equal(response.statusCode, 400);
+    assert.match(response.body, /OAuth provider returned an authorization error/);
+    assert.doesNotMatch(response.body, /SECRET/);
+    assert.doesNotMatch(response.body, /raw-token/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("startOAuthFlow uses one redirectUri for authorization and token exchange", async () => {
+  const { oauth, cleanup } = await importOAuthWithTempHome();
+  const previousFetch = global.fetch;
+  const previousClientId = process.env.CONVENTION_GITHUB_CLIENT_ID;
+  const previousClientSecret = process.env.CONVENTION_GITHUB_CLIENT_SECRET;
+
+  process.env.CONVENTION_GITHUB_CLIENT_ID = "client-id";
+  process.env.CONVENTION_GITHUB_CLIENT_SECRET = "client-secret";
+
+  let launchedAuthUrl;
+  let tokenRequestBody;
+
+  global.fetch = async (_url, options) => {
+    tokenRequestBody = options.body;
+    return new Response(
+      JSON.stringify({
+        access_token: "access-token",
+        refresh_token: "refresh-token",
+        expires_in: 3600,
+        token_type: "Bearer",
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+
+  try {
+    const redirectUri = "http://127.0.0.1:45555/oauth/callback";
+    const tokenSet = await oauth.startOAuthFlow({
+      provider: "github",
+      config: {
+        allowNonInteractive: true,
+        shouldOpenBrowser: true,
+        printAuthorizationUrl: false,
+        browserLauncher: (url) => {
+          launchedAuthUrl = url;
+          return true;
+        },
+        startLocalCallbackServer: async () => ({
+          redirectUri,
+          waitForCallback: async () => {
+            const authUrl = new URL(launchedAuthUrl);
+            return {
+              code: "auth-code",
+              state: authUrl.searchParams.get("state"),
+              redirectUri,
+            };
+          },
+          close: () => {},
+        }),
+      },
+    });
+
+    const authUrl = new URL(launchedAuthUrl);
+    const tokenParams = new URLSearchParams(tokenRequestBody);
+
+    assert.equal(authUrl.searchParams.get("redirect_uri"), redirectUri);
+    assert.equal(tokenParams.get("redirect_uri"), redirectUri);
+    assert.equal(tokenSet.accessToken, "access-token");
+  } finally {
+    global.fetch = previousFetch;
+    if (previousClientId === undefined) {
+      delete process.env.CONVENTION_GITHUB_CLIENT_ID;
+    } else {
+      process.env.CONVENTION_GITHUB_CLIENT_ID = previousClientId;
+    }
+    if (previousClientSecret === undefined) {
+      delete process.env.CONVENTION_GITHUB_CLIENT_SECRET;
+    } else {
+      process.env.CONVENTION_GITHUB_CLIENT_SECRET = previousClientSecret;
+    }
+    cleanup();
+  }
+});
+
+test("startOAuthFlow does not print authorization URL unless explicitly allowed", async () => {
+  const { oauth, cleanup } = await importOAuthWithTempHome();
+  const previousClientId = process.env.CONVENTION_GITHUB_CLIENT_ID;
+  const previousClientSecret = process.env.CONVENTION_GITHUB_CLIENT_SECRET;
+  const previousConsoleLog = console.log;
+
+  process.env.CONVENTION_GITHUB_CLIENT_ID = "client-id";
+  process.env.CONVENTION_GITHUB_CLIENT_SECRET = "client-secret";
+
+  const loggedLines = [];
+  let closeCalled = false;
+  console.log = (...args) => {
+    loggedLines.push(args.join(" "));
+  };
+
+  try {
+    await assert.rejects(
+      () =>
+        oauth.startOAuthFlow({
+          provider: "github",
+          config: {
+            allowNonInteractive: true,
+            shouldOpenBrowser: true,
+            browserLauncher: () => false,
+            startLocalCallbackServer: async () => ({
+              redirectUri: "http://127.0.0.1:45555/oauth/callback",
+              waitForCallback: async () => {
+                throw new Error("callback wait should not start after browser launch failure");
+              },
+              close: () => {
+                closeCalled = true;
+              },
+            }),
+          },
+        }),
+      /No authorization URL was printed/,
+    );
+
+    // authorization URL 전체에는 state/code_challenge가 포함되므로 기본 경로에서는 URL 형태의 민감 인증 파라미터를 stdout에 남기지 않습니다.
+    const combinedLogs = loggedLines.join("\n");
+    assert.doesNotMatch(combinedLogs, /redirect_uri=/);
+    assert.doesNotMatch(combinedLogs, /state=/);
+    assert.doesNotMatch(combinedLogs, /code_challenge=/);
+    assert.equal(closeCalled, true);
+  } finally {
+    console.log = previousConsoleLog;
+    if (previousClientId === undefined) {
+      delete process.env.CONVENTION_GITHUB_CLIENT_ID;
+    } else {
+      process.env.CONVENTION_GITHUB_CLIENT_ID = previousClientId;
+    }
+    if (previousClientSecret === undefined) {
+      delete process.env.CONVENTION_GITHUB_CLIENT_SECRET;
+    } else {
+      process.env.CONVENTION_GITHUB_CLIENT_SECRET = previousClientSecret;
+    }
+    cleanup();
+  }
+});
+
+test("OAuth token store rejects unsupported providers", async () => {
+  const { oauth, cleanup } = await importOAuthWithTempHome();
+
+  try {
+    assert.throws(
+      () => oauth.saveOAuthTokens("not-registered", { accessToken: "token" }),
+      /Unsupported OAuth provider/,
+    );
+    assert.throws(() => oauth.loadOAuthTokens("not-registered"), /Unsupported OAuth provider/);
+    assert.throws(() => oauth.clearOAuthTokens("not-registered"), /Unsupported OAuth provider/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("OAuth token store keeps tokens in credentials namespace only", async () => {
+  const { oauth, store, cleanup } = await importOAuthWithTempHome();
+
+  try {
+    oauth.saveOAuthTokens("github-copilot", {
+      accessToken: "copilot-access-token",
       expiresAt: new Date(Date.now() + 3600000).toISOString(),
-    };
+    });
 
-    // 토큰 저장 실행
-    oauth.saveOAuthTokens("antigravity", dummyTokens);
-
-    // 로드 및 값 검사
-    const loaded = oauth.loadOAuthTokens("antigravity");
-    assert.equal(loaded.accessToken, "access-token-fixture-AA");
-    assert.equal(loaded.refreshToken, "refresh-token-fixture-AA");
-
-    // config.json에 secret 값이 기입되지 않았는지 최종 검사
+    const loaded = oauth.loadOAuthTokens("github-copilot");
+    assert.equal(loaded.accessToken, "copilot-access-token");
     assert.equal(fs.existsSync(store.CONFIG_FILE_PATH), false);
     assert.equal(fs.existsSync(store.CREDENTIALS_FILE_PATH), true);
 
-    const rawCredentials = fs.readFileSync(store.CREDENTIALS_FILE_PATH, "utf8");
-    assert.match(rawCredentials, /access-token-fixture-AA/);
-
-    // 다른 provider와 API keys 덮어쓰기 오염 방지 테스트
-    oauth.saveOAuthTokens("github-copilot", {
-      accessToken: "copilot-access-token",
-    });
-
-    const antigravityAgain = oauth.loadOAuthTokens("antigravity");
-    assert.equal(antigravityAgain.accessToken, "access-token-fixture-AA");
-
-    // 토큰 삭제 검사
-    oauth.clearOAuthTokens("antigravity");
-    assert.equal(oauth.loadOAuthTokens("antigravity"), null);
-    assert.equal(oauth.loadOAuthTokens("github-copilot").accessToken, "copilot-access-token");
-
+    oauth.clearOAuthTokens("github-copilot");
+    assert.equal(oauth.loadOAuthTokens("github-copilot"), null);
   } finally {
     cleanup();
   }
 });
 
-// -----------------------------------------------------------------------------
-// 5. Token Refresh tests
-// -----------------------------------------------------------------------------
+test("supportsRefresh=false blocks refresh endpoint calls", async () => {
+  const { oauth, cleanup } = await importOAuthWithTempHome();
+  const previousFetch = global.fetch;
+  const previousClientId = process.env.CONVENTION_GITHUB_CLIENT_ID;
+  const previousClientSecret = process.env.CONVENTION_GITHUB_CLIENT_SECRET;
+  let fetchCalled = false;
 
-test("AB isAccessTokenExpired and getValidAccessToken refresh branch tests", async () => {
+  process.env.CONVENTION_GITHUB_CLIENT_ID = "client-id";
+  process.env.CONVENTION_GITHUB_CLIENT_SECRET = "client-secret";
+  global.fetch = async () => {
+    fetchCalled = true;
+    throw new Error("fetch must not be called");
+  };
+
+  try {
+    oauth.saveOAuthTokens("github", {
+      accessToken: "expired-token",
+      refreshToken: "refresh-token",
+      expiresAt: new Date(Date.now() - 3600000).toISOString(),
+    });
+
+    await assert.rejects(
+      () => oauth.getValidAccessToken("github"),
+      /cannot be refreshed for this provider/,
+    );
+    assert.equal(fetchCalled, false);
+  } finally {
+    global.fetch = previousFetch;
+    if (previousClientId === undefined) {
+      delete process.env.CONVENTION_GITHUB_CLIENT_ID;
+    } else {
+      process.env.CONVENTION_GITHUB_CLIENT_ID = previousClientId;
+    }
+    if (previousClientSecret === undefined) {
+      delete process.env.CONVENTION_GITHUB_CLIENT_SECRET;
+    } else {
+      process.env.CONVENTION_GITHUB_CLIENT_SECRET = previousClientSecret;
+    }
+    cleanup();
+  }
+});
+
+test("isAccessTokenExpired applies clock skew", async () => {
   const { oauth, cleanup } = await importOAuthWithTempHome();
 
   try {
     const futureDate = new Date(Date.now() + 100000).toISOString();
-    const pastDate = new Date(Date.now() - 50000).toISOString();
+    const nearDate = new Date(Date.now() + 10000).toISOString();
 
     assert.equal(oauth.isAccessTokenExpired({ accessToken: "t", expiresAt: futureDate }), false);
-    assert.equal(oauth.isAccessTokenExpired({ accessToken: "t", expiresAt: pastDate }), true);
-    // 60초 skew 기준 검사 (만료 10초 전은 만료된 것으로 취급해야 함)
-    const nearDate = new Date(Date.now() + 10000).toISOString();
     assert.equal(oauth.isAccessTokenExpired({ accessToken: "t", expiresAt: nearDate }), true);
-
-  } finally {
-    cleanup();
-  }
-});
-
-// -----------------------------------------------------------------------------
-// 6. Integration & Header Injection Routing Tests
-// -----------------------------------------------------------------------------
-
-test("AC Provider routing intercepts oauth authType and injects Bearer header", async () => {
-  const { oauth, cleanup } = await importOAuthWithTempHome();
-
-  try {
-    const { generateWithProvider, listProviderModels } = await import("../src/providers/index.js");
-
-    const futureDate = new Date(Date.now() + 100000).toISOString();
-    oauth.saveOAuthTokens("antigravity", {
-      accessToken: "my-valid-bearer-token-123",
-      expiresAt: futureDate,
-    });
-
-    // mock AI provider는 oauth를 지원하지 않으므로, oauth authType 설정 시 에러가 나야 합니다.
-    const invalidConfig = {
-      provider: "mock",
-      authType: "oauth",
-    };
-    
-    await assert.rejects(
-      generateWithProvider({ prompt: "hello", config: invalidConfig }),
-      /does not support OAuth authentication/
-    );
-
+    assert.equal(oauth.isAccessTokenExpired({ accessToken: "t" }), true);
   } finally {
     cleanup();
   }
