@@ -118,6 +118,14 @@ function getSupportedAuthTypes(provider) {
  * @param {string} authType
  */
 function assertProviderAuthType(provider, authType) {
+  // Antigravity OAuth endpoint는 공식 검증 전이므로 안정 설정 flow에서 차단합니다.
+  // 사용자가 명시 baseURL/experimental opt-in을 둔 provider 호출 경로와 OAuth login flow를 섞지 않기 위한 방어입니다.
+  if (provider === "antigravity" && authType === "oauth") {
+    throw new Error(
+      "antigravity OAuth is experimental and disabled until official endpoints are verified.",
+    );
+  }
+
   const supportedAuthTypes = getSupportedAuthTypes(provider);
 
   if (!supportedAuthTypes.includes(authType)) {
