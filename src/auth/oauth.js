@@ -1,192 +1,236 @@
-import crypto from "crypto";
 import http from "http";
 import childProcess from "child_process";
 import { getOAuthProviderConfig, buildOAuthClientSettings } from "./oauthProviders.js";
 import { generateCodeChallenge, generateCodeVerifier, generateState, verifyState } from "./security.js";
 import { loadCredentials, saveCredentials } from "../config/store.js";
-import { success, warn, error as logError, info } from "../utils/logger.js";
+import { success, info } from "../utils/logger.js";
 import { confirmAction } from "../utils/ui.js";
 
+const DEFAULT_CALLBACK_PATH = "/oauth/callback";
+const DEFAULT_CALLBACK_TIMEOUT_MS = 120000;
+const GENERIC_PROVIDER_AUTH_ERROR =
+  "OAuth provider returned an authorization error. Please retry login.";
+const RELOGIN_REQUIRED_MESSAGE =
+  "OAuth session cannot be refreshed for this provider. Please login again with `convention --model <provider> oauth`.";
+
 /**
- * 특정 URL을 시스템의 기본 브라우저로 실행합니다.
- * 외부 쉘 인젝션 공격을 예방하기 위해 argv 배열 방식을 활용합니다.
+ * 시스템 기본 브라우저로 OAuth 인증 URL을 엽니다.
+ * URL은 shell 문자열로 합치지 않고 argv 배열로만 전달해서 명령 주입 위험을 줄입니다.
  *
- * @param {string} url - 브라우저로 오픈할 대상 URL
- * @returns {boolean} 브라우저 실행 성공 여부
+ * @param {string} url
+ * @returns {boolean}
  */
 export function launchBrowser(url) {
   const platform = process.platform;
+
   try {
     if (platform === "win32") {
-      // Windows: cmd.exe /c start "" "url" 호출
       childProcess.execFileSync("cmd.exe", ["/c", "start", "", url]);
     } else if (platform === "darwin") {
-      // macOS: open "url"
       childProcess.execFileSync("open", [url]);
     } else {
-      // Linux: xdg-open "url"
       childProcess.execFileSync("xdg-open", [url]);
     }
     return true;
-  } catch (error) {
-    // 브라우저 자동 실행 실패 시 안전하게 경고 출력
+  } catch {
     return false;
   }
 }
 
-/**
- * 127.0.0.1에 바인딩하여 브라우저 리다이렉트로부터 authorization code 및 state를 안전하게 가로채는 HTTP 서버를 실행합니다.
- * 보안 강화를 위해 OS가 배정하는 랜덤 포트(port: 0)를 사용하며, loopback 인터페이스에만 전용 바인딩합니다.
- *
- * @param {object} options
- * @param {string} options.callbackPath - 수신 대기할 path (예: "/oauth/callback")
- * @param {number} options.timeoutMs - 최대 대기 타임아웃 밀리초 (기본 120초)
- * @returns {Promise<object>} { code, state, redirectUri } 인증 결과
- */
-export async function waitForOAuthCallback({ callbackPath = "/oauth/callback", timeoutMs = 120000 } = {}) {
-  // callback path 정규화 (항상 '/'로 시작하도록 보장)
-  const normalizedPath = callbackPath.startsWith("/") ? callbackPath : `/${callbackPath}`;
-  
-  return new Promise((resolve, reject) => {
-    let server;
-    let timeoutId;
+function normalizeCallbackPath(callbackPath) {
+  if (typeof callbackPath !== "string" || callbackPath.trim().length === 0) {
+    return DEFAULT_CALLBACK_PATH;
+  }
+  return callbackPath.startsWith("/") ? callbackPath : `/${callbackPath}`;
+}
 
-    // 서버 안전 종료 헬퍼 (중복 호출 방지)
-    const cleanupAndCloseServer = () => {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-      if (server) {
-        try {
-          server.close();
-        } catch (err) {
-          // 이미 닫혔거나 에러인 경우 무시
-        }
-        server = null;
-      }
-    };
+function closeServer(server) {
+  if (!server || !server.listening) {
+    return;
+  }
 
-    // 타임아웃 이벤트 핸들러 등록
-    timeoutId = setTimeout(() => {
-      cleanupAndCloseServer();
-      reject(new Error("OAuth callback 수신 대기 시간이 만료되었습니다 (Timeout)."));
-    }, timeoutMs);
+  try {
+    server.close();
+  } catch {
+    // 이미 닫힌 서버는 정리 완료 상태로 취급합니다.
+  }
+}
 
-    // loopback IP주소(127.0.0.1)에 바인딩되는 HTTP 서버를 생성합니다.
-    server = http.createServer((req, res) => {
-      // client redirect 요청에 맞춘 redirectUri 주소 생성용 임시 포트 정보
-      const currentPort = server.address().port;
-      const originUri = `http://127.0.0.1:${currentPort}`;
-      
-      try {
-        const reqUrl = new URL(req.url, originUri);
+function writeHtml(res, statusCode, body) {
+  res.writeHead(statusCode, { "Content-Type": "text/html; charset=utf-8" });
+  res.end(body);
+}
 
-        // 지정된 callback path와 정확히 일치하는 요청인지 확인합니다.
-        if (reqUrl.pathname !== normalizedPath) {
-          res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-          res.end("Not Found");
-          return;
-        }
+function successHtml() {
+  return `<!doctype html>
+<html lang="ko">
+  <head><meta charset="utf-8"><title>OAuth Login Complete</title></head>
+  <body>
+    <h1>OAuth login complete</h1>
+    <p>You may return to the terminal and close this browser window.</p>
+  </body>
+</html>`;
+}
 
-        // query parameter 파싱
-        const code = reqUrl.searchParams.get("code");
-        const state = reqUrl.searchParams.get("state");
-        const errParam = reqUrl.searchParams.get("error");
-        const errDescParam = reqUrl.searchParams.get("error_description");
-
-        // 1. Provider가 반환한 오류 파라미터가 있을 경우
-        if (errParam) {
-          res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-          res.end("<h2>인증에 실패했습니다.</h2><p>OAuth Provider Error: " + sanitizeOAuthError(errParam) + "</p>");
-          cleanupAndCloseServer();
-          reject(new Error(`OAuth provider returned error: ${errParam} (${errDescParam || "No description"})`));
-          return;
-        }
-
-        // 2. code가 없을 경우
-        if (!code) {
-          res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-          res.end("<h2>잘못된 접근입니다.</h2><p>Authorization code is missing.</p>");
-          cleanupAndCloseServer();
-          reject(new Error("Callback request did not contain an authorization code."));
-          return;
-        }
-
-        // 3. 수신 성공 시 사용자 브라우저에 성공 메시지 렌더링 후 Promise를 완료합니다.
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(`
-          <html>
-            <head>
-              <meta charset="utf-8">
-              <title>인증 성공</title>
-              <style>
-                body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f3f4f6; color: #1f2937; }
-                .container { text-align: center; background: white; padding: 2.5rem; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
-                h1 { color: #10b981; margin-bottom: 1rem; }
-                p { font-size: 1.1rem; }
-              </style>
-            </head>
-            <body>
-              <div class="container">
-                <h1>인증이 완료되었습니다!</h1>
-                <p>터미널로 돌아가서 작업을 계속해 주세요. 이 창은 닫으셔도 좋습니다.</p>
-              </div>
-            </body>
-          </html>
-        `);
-
-        cleanupAndCloseServer();
-        resolve({
-          code,
-          state,
-          redirectUri: `http://127.0.0.1:${currentPort}${normalizedPath}`,
-        });
-
-      } catch (err) {
-        res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-        res.end("Internal Server Error");
-        cleanupAndCloseServer();
-        reject(err);
-      }
-    });
-
-    // 랜덤 포트(0)로 바인딩을 시도합니다.
-    server.on("error", (err) => {
-      cleanupAndCloseServer();
-      reject(err);
-    });
-
-    server.listen(0, "127.0.0.1");
-  });
+function errorHtml() {
+  return `<!doctype html>
+<html lang="ko">
+  <head><meta charset="utf-8"><title>OAuth Login Failed</title></head>
+  <body>
+    <h1>OAuth login failed</h1>
+    <p>${GENERIC_PROVIDER_AUTH_ERROR}</p>
+  </body>
+</html>`;
 }
 
 /**
- * provider 설정을 바탕으로 브라우저 인증에 필요한 Authorization URL을 구성합니다.
+ * 하나의 로컬 콜백 서버 인스턴스가 redirectUri와 callback 결과를 모두 제공합니다.
+ * 이전 구조처럼 임시 포트를 잡았다가 놓지 않으므로, 인증 URL과 실제 리스너 포트가 어긋나지 않습니다.
+ *
+ * @param {object} options
+ * @param {string} options.callbackPath
+ * @param {number} options.timeoutMs
+ * @returns {Promise<{redirectUri: string, waitForCallback: Function, close: Function}>}
+ */
+export async function startLocalCallbackServer({
+  callbackPath = DEFAULT_CALLBACK_PATH,
+  timeoutMs = DEFAULT_CALLBACK_TIMEOUT_MS,
+} = {}) {
+  const normalizedPath = normalizeCallbackPath(callbackPath);
+  let timeoutId;
+  let settled = false;
+  let resolveCallback;
+  let rejectCallback;
+
+  const callbackPromise = new Promise((resolve, reject) => {
+    resolveCallback = resolve;
+    rejectCallback = reject;
+  });
+
+  const server = http.createServer((req, res) => {
+    const address = server.address();
+    const origin = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const reqUrl = new URL(req.url, origin);
+
+      // 잘못된 path 요청은 OAuth callback으로 처리하지 않고 서버도 닫지 않습니다.
+      // 브라우저나 보안 제품의 사전 요청 때문에 정상 callback이 뒤따라올 수 있습니다.
+      if (reqUrl.pathname !== normalizedPath) {
+        res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Not Found");
+        return;
+      }
+
+      const errorParam = reqUrl.searchParams.get("error");
+      if (errorParam) {
+        settled = true;
+        writeHtml(res, 400, errorHtml());
+        clearTimeout(timeoutId);
+        closeServer(server);
+        rejectCallback(new Error(GENERIC_PROVIDER_AUTH_ERROR));
+        return;
+      }
+
+      const code = reqUrl.searchParams.get("code");
+      if (!code) {
+        settled = true;
+        writeHtml(res, 400, errorHtml());
+        clearTimeout(timeoutId);
+        closeServer(server);
+        rejectCallback(new Error("OAuth callback did not include an authorization code."));
+        return;
+      }
+
+      const state = reqUrl.searchParams.get("state");
+      settled = true;
+      writeHtml(res, 200, successHtml());
+      clearTimeout(timeoutId);
+      closeServer(server);
+      resolveCallback({
+        code,
+        state,
+        redirectUri: `${origin}${normalizedPath}`,
+      });
+    } catch {
+      settled = true;
+      res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("Internal Server Error");
+      clearTimeout(timeoutId);
+      closeServer(server);
+      rejectCallback(new Error("OAuth callback handling failed."));
+    }
+  });
+
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+
+  const address = server.address();
+  const redirectUri = `http://127.0.0.1:${address.port}${normalizedPath}`;
+
+  timeoutId = setTimeout(() => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    closeServer(server);
+    rejectCallback(new Error("OAuth callback wait timed out."));
+  }, timeoutMs);
+
+  return {
+    redirectUri,
+    waitForCallback: () => callbackPromise,
+    close: () => {
+      clearTimeout(timeoutId);
+      closeServer(server);
+    },
+  };
+}
+
+/**
+ * 기존 테스트와 호출부 호환을 위해 callback 결과만 기다리는 래퍼를 유지합니다.
+ *
+ * @param {object} options
+ * @returns {Promise<object>}
+ */
+export async function waitForOAuthCallback(options = {}) {
+  const callbackServer = await startLocalCallbackServer(options);
+  try {
+    return await callbackServer.waitForCallback();
+  } finally {
+    callbackServer.close();
+  }
+}
+
+/**
+ * Provider 설정으로 Authorization URL을 구성합니다.
+ * 공식 검증이 끝나지 않은 provider는 oauthProviders.js에서 endpoint를 제공하지 않으므로 여기서 중단됩니다.
  *
  * @param {object} params
- * @param {string} params.provider - AI provider명
- * @param {string} params.redirectUri - callback 수신 서버 URI
- * @param {string} params.state - CSRF 방어용 state
- * @param {string} params.codeChallenge - PKCE용 code challenge
- * @param {string[]} params.scopes - 인가 요청할 scope 목록
- * @returns {string} 완성된 Authorization URL
+ * @returns {string}
  */
 export function buildAuthorizationUrl({ provider, redirectUri, state, codeChallenge, scopes }) {
   const providerConfig = getOAuthProviderConfig(provider);
-  const clientSettings = buildOAuthClientSettings(provider);
+  if (!providerConfig.authUrl) {
+    throw new Error(`${provider} OAuth is not available until official endpoints are verified.`);
+  }
 
+  const clientSettings = buildOAuthClientSettings(provider);
   const authUrl = new URL(providerConfig.authUrl);
+
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("client_id", clientSettings.clientId);
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("state", state);
 
-  // scope 병합 및 공백 구분 조인
   const finalScopes = Array.from(new Set([...providerConfig.scopes, ...(scopes || [])]));
   authUrl.searchParams.set("scope", finalScopes.join(" "));
 
-  // PKCE 지원 모델인 경우 challenge 파라미터를 인젝션합니다.
   if (providerConfig.supportsPKCE && codeChallenge) {
     authUrl.searchParams.set("code_challenge", codeChallenge);
     authUrl.searchParams.set("code_challenge_method", "S256");
@@ -196,149 +240,103 @@ export function buildAuthorizationUrl({ provider, redirectUri, state, codeChalle
 }
 
 /**
- * OAuth 인증 흐름 전체를 총괄 조율(orchestrate)하는 함수입니다.
- * PKCE verifier/challenge 생성, Local Callback 실행, 브라우저 연동, 토큰 교환 및 저장을 총괄합니다.
+ * OAuth 전체 흐름을 실행합니다.
+ * 동일한 callbackServer.redirectUri를 authorization 단계와 token exchange 단계에 모두 사용합니다.
  *
  * @param {object} params
- * @param {string} params.provider - AI Provider 이름
- * @param {object} params.config - 설정 객체
- * @returns {Promise<object>} 저장된 token 정보 객체
+ * @returns {Promise<object>}
  */
 export async function startOAuthFlow({ provider, config = {} }) {
   const providerConfig = getOAuthProviderConfig(provider);
-
-  // CI 또는 TTY가 없는 비대화형 환경 확인
-  const isCI = process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true";
-  const isNonInteractive = !process.stdout.isTTY;
-
-  if (isCI || isNonInteractive) {
-    throw new Error("비대화형 환경(CI/TTY 없음)에서는 대화형 OAuth 인증 흐름을 실행할 수 없습니다.");
+  if (providerConfig.oauthAvailable === false || !providerConfig.authUrl || !providerConfig.tokenUrl) {
+    throw new Error(`${provider} OAuth is experimental and disabled until official endpoints are verified.`);
   }
 
-  // 1. 임시 PKCE 세션 값 생성 및 CSRF state 준비
+  const isCI = process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true";
+  const isNonInteractive = !process.stdout.isTTY;
+  if (!config.allowNonInteractive && (isCI || isNonInteractive)) {
+    throw new Error("Interactive OAuth login cannot run in CI or a non-interactive terminal.");
+  }
+
   const codeVerifier = providerConfig.supportsPKCE ? generateCodeVerifier() : null;
   const codeChallenge = codeVerifier ? generateCodeChallenge(codeVerifier) : null;
   const state = generateState();
-
-  // 2. callback 수신 서버 구동 (랜덤 포트 기동)
-  const callbackServerPromise = waitForOAuthCallback({
-    callbackPath: providerConfig.callbackPath || "/oauth/callback",
-    timeoutMs: config.timeoutMs || 120000,
+  const callbackServerFactory = config.startLocalCallbackServer || startLocalCallbackServer;
+  const callbackServer = await callbackServerFactory({
+    callbackPath: providerConfig.callbackPath || DEFAULT_CALLBACK_PATH,
+    timeoutMs: config.timeoutMs || DEFAULT_CALLBACK_TIMEOUT_MS,
   });
 
-  // callback 대기를 시작한 후 포트 배정 결과를 알기 위해 Promise 내부 서버 바인딩 시점 확보가 필요하므로
-  // server가 bind된 uri를 확인합니다.
-  const redirectUri = await new Promise((resolveRedirect) => {
-    // callbackServerPromise 내부에 리스너가 등록되는 텀을 벌어줍니다.
-    const checkInterval = setInterval(() => {
-      // callbackServerPromise 내부에서 생성된 redirectUri 포맷이 확인되면 resolve
-      callbackServerPromise.catch(() => {}); // catch 무시용
-      resolveRedirect(true);
-      clearInterval(checkInterval);
-    }, 100);
-  }).then(async () => {
-    // 실제 bind된 URI를 획득하기 위해 promise 내부 상태를 가볍게 우회 대기합니다.
-    // wait을 대신해 callbackServerPromise의 resolve 전에 URI를 알기 위해 http server 주소를 바로 찾습니다.
-    return null;
-  });
+  try {
+    const authorizationUrl = buildAuthorizationUrl({
+      provider,
+      redirectUri: callbackServer.redirectUri,
+      state,
+      codeChallenge,
+      scopes: providerConfig.scopes,
+    });
 
-  // 포트 정보를 정확히 가져오기 위해 waitForOAuthCallback 함수가 구동되는 즉시 resolve하는 헬퍼 활용 또는
-  // direct port를 config에서 fallback 가능하게 조율하되 
-  // waitForOAuthCallback의 실시간 배정 redirectUri를 code callback 수신 전에 획득해야 합니다.
-  // 이 문제를 해결하기 위해 startLocalCallbackServer / buildRedirectUri 구조로 수동 기동하는 것이 안전합니다.
-  // waitForOAuthCallback Promise 내부에서 HTTP Server 인스턴스를 먼저 생성하여 redirectUri를 resolve한 뒤
-  // code 수신 대기 promise를 반환하도록 리팩토링합니다.
-  
-  // 아래 리팩토링된 local callback flow로 대체 실행:
-  const tempPortServer = http.createServer();
-  await new Promise((resolveBind, rejectBind) => {
-    tempPortServer.on("error", rejectBind);
-    tempPortServer.listen(0, "127.0.0.1", () => resolveBind());
-  });
-  
-  const assignedPort = tempPortServer.address().port;
-  tempPortServer.close(); // 임시 바인딩 해제
-  
-  const finalRedirectUri = `http://127.0.0.1:${assignedPort}/oauth/callback`;
+    info("OAuth browser login is ready.");
+    // 테스트와 자동화된 검증에서는 shouldOpenBrowser로 브라우저 실행 여부를 주입할 수 있습니다.
+    // 기본 CLI에서는 기존처럼 사용자에게 먼저 물어봅니다.
+    const shouldOpen =
+      typeof config.shouldOpenBrowser === "boolean"
+        ? config.shouldOpenBrowser
+        : config.confirmOpenBrowser === false
+          ? false
+          : await confirmAction("Open a browser to continue OAuth login?");
+    const browserLauncher = config.browserLauncher || launchBrowser;
+    const launchSuccess = shouldOpen ? browserLauncher(authorizationUrl) : false;
 
-  // 3. Authorization URL 빌드
-  const authorizationUrl = buildAuthorizationUrl({
-    provider,
-    redirectUri: finalRedirectUri,
-    state,
-    codeChallenge,
-    scopes: providerConfig.scopes,
-  });
+    if (!launchSuccess && config.printAuthorizationUrl !== false) {
+      info("\nOpen this URL in your browser to continue OAuth login:\n");
+      console.log(authorizationUrl);
+      info("\nReturn to the terminal after login completes.\n");
+    }
 
-  // 4. 사용자에게 브라우저 오픈 여부 확인 및 브라우저 실행 시도
-  info("OAuth 브라우저 로그인을 준비 중입니다...");
-  const shouldOpen = await confirmAction("인증을 진행하기 위해 웹 브라우저를 실행하시겠습니까?");
-  
-  let launchSuccess = false;
-  if (shouldOpen) {
-    launchSuccess = launchBrowser(authorizationUrl);
+    const receivedData = await callbackServer.waitForCallback();
+    if (!verifyState(state, receivedData.state)) {
+      throw new Error("OAuth state verification failed.");
+    }
+
+    info("Exchanging OAuth authorization code for tokens...");
+    const tokenSet = await exchangeCodeForToken({
+      provider,
+      code: receivedData.code,
+      redirectUri: callbackServer.redirectUri,
+      codeVerifier,
+    });
+
+    saveOAuthTokens(provider, tokenSet);
+    success(`${provider} OAuth login and token storage completed.`);
+
+    return tokenSet;
+  } finally {
+    callbackServer.close();
   }
-
-  if (!launchSuccess) {
-    // 브라우저 실행 실패 혹은 사용자 거부 시 수동 안내
-    // URL 원문은 화면에 한 번만 안내하되, 보안을 위해 영구 로그나 에러 스택에는 남기지 않습니다.
-    info("\n다음 URL을 수동으로 웹 브라우저에 복사하여 붙여넣고 로그인을 진행해 주세요:\n");
-    console.log(authorizationUrl);
-    info("\n로그인 완료 후 터미널로 복귀해 주시기 바랍니다.\n");
-  }
-
-  // 5. Callback 수신 대기 (포트 번호 강제 대입으로 수신)
-  const callbackPromise = waitForOAuthCallback({
-    callbackPath: "/oauth/callback",
-    timeoutMs: config.timeoutMs || 120000,
-  });
-
-  // callback listen을 강제하기 위해 별도 서버 재생성 없이 가로채기
-  // wait callback 수신
-  const receivedData = await callbackPromise;
-
-  // 6. State 검증 수행 (CSRF 검증)
-  const isStateValid = verifyState(state, receivedData.state);
-  if (!isStateValid) {
-    throw new Error("OAuth state 검증 실패 (CSRF 보호 조치에 의해 인가가 차단되었습니다).");
-  }
-
-  // 7. Token 교환 수행 (Authorization Code -> Tokens)
-  info("인증 코드를 통해 토큰을 발급받는 중입니다...");
-  const tokenSet = await exchangeCodeForToken({
-    provider,
-    code: receivedData.code,
-    redirectUri: receivedData.redirectUri || finalRedirectUri,
-    codeVerifier,
-  });
-
-  // 8. 토큰 저장
-  saveOAuthTokens(provider, tokenSet);
-  success(`${provider} OAuth 로그인 및 설정 저장이 성공적으로 완료되었습니다.`);
-
-  return tokenSet;
 }
 
 /**
- * 인가 코드를 Token endpoint에 전달하여 Access Token 및 Refresh Token을 획득합니다.
+ * Authorization code를 token endpoint로 교환합니다.
+ * 실패 응답 본문은 읽거나 출력하지 않아 provider가 준 민감 상세 정보가 노출되지 않게 합니다.
  *
  * @param {object} params
- * @param {string} params.provider - AI provider명
- * @param {string} params.code - 수신한 authorization code
- * @param {string} params.redirectUri - matching redirect URI
- * @param {string} params.codeVerifier - PKCE verifier
- * @returns {Promise<object>} 발급받은 token 객체
+ * @returns {Promise<object>}
  */
 export async function exchangeCodeForToken({ provider, code, redirectUri, codeVerifier }) {
   const providerConfig = getOAuthProviderConfig(provider);
-  const clientSettings = buildOAuthClientSettings(provider);
+  if (!providerConfig.tokenUrl) {
+    throw new Error(`${provider} OAuth token endpoint is not configured.`);
+  }
 
+  const clientSettings = buildOAuthClientSettings(provider);
   const params = new URLSearchParams();
+
   params.set("grant_type", "authorization_code");
   params.set("code", code);
   params.set("redirect_uri", redirectUri);
   params.set("client_id", clientSettings.clientId);
-  
+
   if (clientSettings.clientSecret) {
     params.set("client_secret", clientSettings.clientSecret);
   }
@@ -351,7 +349,7 @@ export async function exchangeCodeForToken({ provider, code, redirectUri, codeVe
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "application/json",
+        Accept: "application/json",
       },
       body: params.toString(),
     });
@@ -361,12 +359,10 @@ export async function exchangeCodeForToken({ provider, code, redirectUri, codeVe
     }
 
     const payload = await response.json();
-    
     if (!payload.access_token) {
       throw new Error("Response payload does not contain an access_token.");
     }
 
-    // 만료 시간 계산 (expires_in 기본값 3600초)
     const expiresInSeconds = payload.expires_in || 3600;
     const expiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString();
 
@@ -383,19 +379,27 @@ export async function exchangeCodeForToken({ provider, code, redirectUri, codeVe
 }
 
 /**
- * 만료된 Access Token을 Refresh Token을 활용하여 갱신합니다.
+ * 만료된 access token을 refresh token으로 갱신합니다.
+ * provider가 refresh를 지원하지 않는다고 선언하면 token endpoint 호출 없이 재로그인을 요구합니다.
  *
- * @param {string} provider - AI provider명
- * @param {object} config - 사용자 설정
- * @returns {Promise<object>} 갱신된 token 객체
+ * @param {string} provider
+ * @param {object} config
+ * @returns {Promise<object>}
  */
 export async function refreshAccessToken(provider, config = {}) {
   const providerConfig = getOAuthProviderConfig(provider);
+  if (providerConfig.supportsRefresh === false) {
+    throw new Error(RELOGIN_REQUIRED_MESSAGE);
+  }
+  if (!providerConfig.tokenUrl) {
+    throw new Error(`${provider} OAuth token endpoint is not configured.`);
+  }
+
   const clientSettings = buildOAuthClientSettings(provider);
   const tokens = loadOAuthTokens(provider);
 
   if (!tokens || !tokens.refreshToken) {
-    throw new Error("OAuth 세션을 갱신할 수 없습니다. 다시 로그인해 주세요.");
+    throw new Error("OAuth session cannot be refreshed. Please login again.");
   }
 
   const params = new URLSearchParams();
@@ -412,33 +416,30 @@ export async function refreshAccessToken(provider, config = {}) {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "application/json",
+        Accept: "application/json",
       },
       body: params.toString(),
+      signal: config.signal,
     });
 
     if (!response.ok) {
-      // 401 인증 만료 등인 경우 명확하게 재로그인 안내
       if (response.status === 401 || response.status === 400) {
-        throw new Error("OAuth 세션 갱신에 실패했습니다. `convention --model <provider> oauth`로 다시 로그인해 주세요.");
+        throw new Error("OAuth refresh failed. Please login again.");
       }
       throw new Error(`Token refresh failed with status ${response.status}`);
     }
 
     const payload = await response.json();
-
     if (!payload.access_token) {
       throw new Error("Refresh response did not return an access_token.");
     }
 
     const expiresInSeconds = payload.expires_in || 3600;
     const expiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString();
-
     const updatedTokens = {
       ...tokens,
       accessToken: payload.access_token,
       expiresAt,
-      // 신규 refresh token이 발급되면 업데이트하고, 없으면 기존 값을 유지합니다.
       refreshToken: payload.refresh_token || tokens.refreshToken,
     };
 
@@ -450,24 +451,27 @@ export async function refreshAccessToken(provider, config = {}) {
 }
 
 /**
- * Access Token이 유효한지 확인하고, 만료되었을 경우 Refresh를 시도하여 유효한 토큰을 반환합니다.
+ * 저장된 access token을 반환하고, 만료되었으면 안전 조건을 확인한 뒤 refresh를 시도합니다.
  *
- * @param {string} provider - AI provider명
- * @param {object} config - 사용자 설정
- * @returns {Promise<string>} 검증/갱신된 access token 문자열
+ * @param {string} provider
+ * @param {object} config
+ * @returns {Promise<string>}
  */
 export async function getValidAccessToken(provider, config = {}) {
+  const providerConfig = getOAuthProviderConfig(provider);
   const tokens = loadOAuthTokens(provider);
 
   if (!tokens || !tokens.accessToken) {
-    throw new Error("저장된 OAuth 토큰이 없습니다. `convention --model <provider> oauth`로 로그인을 완료해 주세요.");
+    throw new Error("Stored OAuth token is missing. Please complete OAuth login first.");
   }
 
   if (isAccessTokenExpired(tokens)) {
-    if (!tokens.refreshToken) {
-      throw new Error("OAuth access token이 만료되었으나 refresh token이 없습니다. 다시 로그인해 주세요.");
+    if (providerConfig.supportsRefresh === false) {
+      throw new Error(RELOGIN_REQUIRED_MESSAGE);
     }
-    // 토큰 갱신 시도
+    if (!tokens.refreshToken) {
+      throw new Error("OAuth access token expired and no refresh token is available. Please login again.");
+    }
     const refreshed = await refreshAccessToken(provider, config);
     return refreshed.accessToken;
   }
@@ -475,26 +479,32 @@ export async function getValidAccessToken(provider, config = {}) {
   return tokens.accessToken;
 }
 
+function normalizeTokenSaveArgs(provider, tokens) {
+  if (provider && typeof provider === "object" && !tokens) {
+    return {
+      provider: provider.provider,
+      tokens: provider.tokenSet || provider.tokens,
+    };
+  }
+
+  return { provider, tokens };
+}
+
 /**
- * credentials.json 저장소에 provider별 OAuth 토큰 세트를 격리하여 기록합니다.
- * 두 가지 시그니처 (provider, tokens) 및 { provider, tokenSet } 구조를 모두 지원합니다.
+ * OAuth token을 credentials.json의 provider별 namespace에 저장합니다.
+ * 저장 전 provider registry를 확인해서 임의 provider 이름으로 token이 쓰이지 않게 합니다.
  *
- * @param {string|object} provider - AI provider명 혹은 구조분해 객체
- * @param {object} [tokens] - 저장할 token 객체
+ * @param {string|object} provider
+ * @param {object} tokens
  */
 export function saveOAuthTokens(provider, tokens) {
-  let finalProvider = provider;
-  let finalTokens = tokens;
-
-  // { provider, tokenSet } 형태로 인자가 들어온 경우를 안전하게 파싱 처리합니다.
-  if (provider && typeof provider === "object" && !tokens) {
-    finalProvider = provider.provider;
-    finalTokens = provider.tokenSet || provider.tokens;
-  }
+  const { provider: finalProvider, tokens: finalTokens } = normalizeTokenSaveArgs(provider, tokens);
 
   if (!finalProvider) {
     throw new Error("OAuth provider name is required to save tokens");
   }
+  getOAuthProviderConfig(finalProvider);
+
   if (!finalTokens || !finalTokens.accessToken) {
     throw new Error("accessToken is required to save OAuth tokens");
   }
@@ -517,29 +527,33 @@ export function saveOAuthTokens(provider, tokens) {
 }
 
 /**
- * credentials.json 저장소로부터 provider별 OAuth 토큰 세트를 격리하여 불러옵니다.
+ * provider별 OAuth token을 불러옵니다.
+ * 등록되지 않은 OAuth provider는 조용히 null로 fallback하지 않고 명확히 거부합니다.
  *
- * @param {string} provider - AI provider명
- * @returns {object|null} 로드된 token 객체 (없을 경우 null)
+ * @param {string} provider
+ * @returns {object|null}
  */
 export function loadOAuthTokens(provider) {
   if (!provider) {
     throw new Error("OAuth provider name is required to load tokens");
   }
+  getOAuthProviderConfig(provider);
 
   const credentials = loadCredentials();
   return credentials?.oauth?.[provider] || null;
 }
 
 /**
- * credentials.json에서 특정 provider의 OAuth 토큰 세트만 깔끔하게 제거합니다 (로그아웃 대응).
+ * provider별 OAuth token을 삭제합니다.
+ * 삭제도 provider registry 검증을 거쳐 오타나 미지원 provider 조작을 막습니다.
  *
- * @param {string} provider - AI provider명
+ * @param {string} provider
  */
 export function clearOAuthTokens(provider) {
   if (!provider) {
     throw new Error("OAuth provider name is required to clear tokens");
   }
+  getOAuthProviderConfig(provider);
 
   const credentials = loadCredentials();
   if (credentials.oauth && credentials.oauth[provider]) {
@@ -549,41 +563,45 @@ export function clearOAuthTokens(provider) {
 }
 
 /**
- * Access Token이 만료되었는지 확인합니다 (60초의 여유 시간 기준 clock skew 고려).
+ * access token 만료 여부를 판정합니다.
+ * 60초 clock skew를 둬서 만료 직전 token을 외부 API에 보내지 않게 합니다.
  *
- * @param {object} tokenRecord - token 정보 객체
- * @param {number} now - 현재 타임스태프 밀리초
- * @returns {boolean} 만료 여부
+ * @param {object} tokenRecord
+ * @param {number} now
+ * @returns {boolean}
  */
 export function isAccessTokenExpired(tokenRecord, now = Date.now()) {
-  if (!tokenRecord || !tokenRecord.accessToken) {
-    return true;
-  }
-  if (!tokenRecord.expiresAt) {
+  if (!tokenRecord || !tokenRecord.accessToken || !tokenRecord.expiresAt) {
     return true;
   }
 
   const expireTime = new Date(tokenRecord.expiresAt).getTime();
-  // clock skew 60초 적용: 만료되기 60초 전부터 이미 만료된 것으로 취급하여 갱신 유도
   return expireTime - 60000 <= now;
 }
 
 /**
- * OAuth 처리 과정 중 발생하는 오류 정보에서 민감한 정보(토큰 원문, client secret 등)를 정화시킵니다.
+ * OAuth 오류 메시지에서 token, code, client secret 같은 값을 제거합니다.
+ * provider callback의 error/error_description은 원문이 공격자 입력일 수 있으므로 generic message로 대체합니다.
  *
- * @param {Error|string} error - 대상 오류 정보
- * @returns {Error} 정화 완료된 오류 객체
+ * @param {Error|string} error
+ * @returns {Error}
  */
 export function sanitizeOAuthError(error) {
-  const errMsg = typeof error === "string" ? error : error?.message || "";
-  
-  // 민감한 패턴을 감지하여 마스킹합니다.
-  let cleanMsg = errMsg
-    .replace(/access_token=[a-zA-Z0-9_-]+/g, "access_token=[REDACTED]")
-    .replace(/refresh_token=[a-zA-Z0-9_-]+/g, "refresh_token=[REDACTED]")
-    .replace(/client_secret=[a-zA-Z0-9_-]+/g, "client_secret=[REDACTED]")
-    .replace(/code=[a-zA-Z0-9_-]+/g, "code=[REDACTED]")
-    .replace(/Bearer\s+[a-zA-Z0-9_-]+/g, "Bearer [REDACTED]");
+  const rawMessage = typeof error === "string" ? error : error?.message || "";
 
-  return new Error(cleanMsg || "인증 처리 중 보안 관련 알 수 없는 오류가 발생했습니다.");
+  if (
+    rawMessage === GENERIC_PROVIDER_AUTH_ERROR ||
+    rawMessage.toLowerCase().includes("error_description")
+  ) {
+    return new Error(GENERIC_PROVIDER_AUTH_ERROR);
+  }
+
+  const cleanMessage = rawMessage
+    .replace(/access_token=[^&\s]+/giu, "access_token=[REDACTED]")
+    .replace(/refresh_token=[^&\s]+/giu, "refresh_token=[REDACTED]")
+    .replace(/client_secret=[^&\s]+/giu, "client_secret=[REDACTED]")
+    .replace(/code=[^&\s]+/giu, "code=[REDACTED]")
+    .replace(/Bearer\s+[-._~+/=A-Za-z0-9]+/gu, "Bearer [REDACTED]");
+
+  return new Error(cleanMessage || "OAuth processing failed.");
 }
