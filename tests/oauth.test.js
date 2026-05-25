@@ -282,6 +282,147 @@ test("startOAuthFlow does not print authorization URL unless explicitly allowed"
   }
 });
 
+test("startOAuthFlow prints authorization URL only for boolean true opt-in", async () => {
+  const { oauth, cleanup } = await importOAuthWithTempHome();
+  const previousClientId = process.env.CONVENTION_GITHUB_CLIENT_ID;
+  const previousClientSecret = process.env.CONVENTION_GITHUB_CLIENT_SECRET;
+  const previousConsoleLog = console.log;
+  const previousFetch = global.fetch;
+
+  process.env.CONVENTION_GITHUB_CLIENT_ID = "client-id";
+  process.env.CONVENTION_GITHUB_CLIENT_SECRET = "client-secret";
+
+  const loggedLines = [];
+  let waitedForCallback = false;
+  let tokenRequestBody;
+
+  console.log = (...args) => {
+    loggedLines.push(args.join(" "));
+  };
+
+  global.fetch = async (_url, options) => {
+    tokenRequestBody = options.body;
+    return new Response(
+      JSON.stringify({
+        access_token: "access-token",
+        refresh_token: "refresh-token",
+        expires_in: 3600,
+        token_type: "Bearer",
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+
+  try {
+    const tokenSet = await oauth.startOAuthFlow({
+      provider: "github",
+      config: {
+        allowNonInteractive: true,
+        shouldOpenBrowser: true,
+        printAuthorizationUrl: true,
+        browserLauncher: () => false,
+        startLocalCallbackServer: async () => ({
+          redirectUri: "http://127.0.0.1:45555/oauth/callback",
+          waitForCallback: async () => {
+            waitedForCallback = true;
+            // 명시적으로 출력이 허용된 경우에만 stdout에서 authorization URL을 찾아 state를 회수합니다.
+            // 이 state가 실제 콜백 검증에 사용되므로, 허용 경로가 기존 OAuth 흐름을 깨지 않는지 함께 확인합니다.
+            const printedUrl = loggedLines.find((line) =>
+              line.startsWith("https://github.com/login/oauth/authorize"),
+            );
+            const authUrl = new URL(printedUrl);
+            return {
+              code: "auth-code",
+              state: authUrl.searchParams.get("state"),
+              redirectUri: "http://127.0.0.1:45555/oauth/callback",
+            };
+          },
+          close: () => {},
+        }),
+      },
+    });
+
+    const combinedLogs = loggedLines.join("\n");
+    assert.match(combinedLogs, /https:\/\/github\.com\/login\/oauth\/authorize/);
+    assert.match(combinedLogs, /state=/);
+    assert.match(combinedLogs, /code_challenge=/);
+    assert.equal(waitedForCallback, true);
+    assert.equal(tokenSet.accessToken, "access-token");
+    assert.match(String(tokenRequestBody), /code=auth-code/);
+  } finally {
+    console.log = previousConsoleLog;
+    global.fetch = previousFetch;
+    if (previousClientId === undefined) {
+      delete process.env.CONVENTION_GITHUB_CLIENT_ID;
+    } else {
+      process.env.CONVENTION_GITHUB_CLIENT_ID = previousClientId;
+    }
+    if (previousClientSecret === undefined) {
+      delete process.env.CONVENTION_GITHUB_CLIENT_SECRET;
+    } else {
+      process.env.CONVENTION_GITHUB_CLIENT_SECRET = previousClientSecret;
+    }
+    cleanup();
+  }
+});
+
+test("startOAuthFlow treats string true as no authorization URL opt-in", async () => {
+  const { oauth, cleanup } = await importOAuthWithTempHome();
+  const previousClientId = process.env.CONVENTION_GITHUB_CLIENT_ID;
+  const previousClientSecret = process.env.CONVENTION_GITHUB_CLIENT_SECRET;
+  const previousConsoleLog = console.log;
+
+  process.env.CONVENTION_GITHUB_CLIENT_ID = "client-id";
+  process.env.CONVENTION_GITHUB_CLIENT_SECRET = "client-secret";
+
+  const loggedLines = [];
+  console.log = (...args) => {
+    loggedLines.push(args.join(" "));
+  };
+
+  try {
+    await assert.rejects(
+      () =>
+        oauth.startOAuthFlow({
+          provider: "github",
+          config: {
+            allowNonInteractive: true,
+            shouldOpenBrowser: true,
+            printAuthorizationUrl: "true",
+            browserLauncher: () => false,
+            startLocalCallbackServer: async () => ({
+              redirectUri: "http://127.0.0.1:45555/oauth/callback",
+              waitForCallback: async () => {
+                throw new Error("callback wait should not start without boolean true opt-in");
+              },
+              close: () => {},
+            }),
+          },
+        }),
+      /No authorization URL was printed/,
+    );
+
+    // 문자열 "true"는 사용자의 명시적 boolean opt-in으로 보지 않으므로 민감 URL 파라미터가 stdout에 남으면 안 됩니다.
+    const combinedLogs = loggedLines.join("\n");
+    assert.doesNotMatch(combinedLogs, /redirect_uri=/);
+    assert.doesNotMatch(combinedLogs, /state=/);
+    assert.doesNotMatch(combinedLogs, /code_challenge=/);
+  } finally {
+    console.log = previousConsoleLog;
+    if (previousClientId === undefined) {
+      delete process.env.CONVENTION_GITHUB_CLIENT_ID;
+    } else {
+      process.env.CONVENTION_GITHUB_CLIENT_ID = previousClientId;
+    }
+    if (previousClientSecret === undefined) {
+      delete process.env.CONVENTION_GITHUB_CLIENT_SECRET;
+    } else {
+      process.env.CONVENTION_GITHUB_CLIENT_SECRET = previousClientSecret;
+    }
+    cleanup();
+  }
+});
+
 test("OAuth token store rejects unsupported providers", async () => {
   const { oauth, cleanup } = await importOAuthWithTempHome();
 
