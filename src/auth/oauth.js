@@ -171,6 +171,9 @@ export async function startLocalCallbackServer({
   let settled = false;
   // 콜백을 해결할 함수를 저장합니다.
   let resolveCallback;
+  // Promise executor 밖의 timeout/callback 처리에서도 reject를 호출해야 하므로 명시적으로 보관합니다.
+  // 선언 없이 대입하면 ESM strict mode에서 ReferenceError가 발생해 콜백 서버가 정상 동작하지 않습니다.
+  let rejectCallback;
   // 콜백을 거부할 함수를 저장합니다.
 
   // 콜백을 기다립니다.
@@ -213,6 +216,9 @@ export async function startLocalCallbackServer({
         // 타임아웃을 클리어합니다.
         clearTimeout(timeoutId);
         // 서버를 닫습니다.
+        // Provider가 error를 돌려준 경우에도 콜백 서버를 즉시 닫아 포트와 이벤트 루프가 남지 않게 합니다.
+        // 서버가 열린 채로 남으면 테스트와 CLI 프로세스가 종료되지 않는 문제가 생길 수 있습니다.
+        closeServer(server);
         rejectCallback(new Error(GENERIC_PROVIDER_AUTH_ERROR));
         return;
       }
@@ -384,6 +390,23 @@ export function buildAuthorizationUrl({
 }
 
 /**
+ * Authorization URL을 stdout에 출력해도 되는지 판단합니다.
+ *
+ * OAuth authorization URL에는 access token이나 refresh token은 없지만,
+ * CSRF 방어용 state와 PKCE code_challenge가 포함됩니다. 이 값들은 짧은 시간만
+ * 유효하더라도 CI 로그, 터미널 기록, 화면 공유 기록에 남으면 인증 흐름을 약화시킬
+ * 수 있으므로 기본값은 반드시 비공개여야 합니다.
+ *
+ * @param {object} config - OAuth 실행 설정
+ * @returns {boolean} - 사용자가 명시적으로 URL 출력을 허용한 경우에만 true
+ */
+function shouldPrintAuthorizationUrl(config = {}) {
+  // truthy 값 전체를 허용하지 않고 boolean true만 허용합니다.
+  // 예를 들어 환경 변수나 CLI 파싱 실수로 "true" 문자열이 들어와도 민감 URL을 출력하지 않습니다.
+  return config.printAuthorizationUrl === true;
+}
+
+/**
  * OAuth 전체 흐름을 실행합니다.
  * 동일한 callbackServer.redirectUri를 authorization 단계와 token exchange 단계에 모두 사용합니다.
  *
@@ -465,7 +488,7 @@ export async function startOAuthFlow({ provider, config = {} }) {
       : false;
 
     // 브라우저가 성공적으로 실행되었는지 확인합니다.
-    if (!launchSuccess && config.printAuthorizationUrl === true) {
+    if (!launchSuccess && shouldPrintAuthorizationUrl(config)) {
       // 브라우저가 성공적으로 실행되지 않았고, printAuthorizationUrl이 true이면 Authorization URL을 출력합니다.
       info("\nOpen this URL in your browser to continue OAuth login:\n");
       console.log(authorizationUrl);
