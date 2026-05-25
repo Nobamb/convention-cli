@@ -70,6 +70,10 @@ export const OAUTH_PROVIDERS = {
       secretEnv: "CONVENTION_ANTIGRAVITY_CLIENT_SECRET",
       requiresSecret: true,
     },
+    // 리다이렉트 URI
+    // MCP OAuth에서 "내 서비스가 OAuth Provider"일 때,
+    // 내 서비스 OAuth client 설정에 허용해야 하는 Antigravity callback URI.
+    redirectUri: "https://antigravity.google/oauth-callback",
     // PKCE 사용 여부
     supportsPKCE: true,
     // 토큰 갱신 여부
