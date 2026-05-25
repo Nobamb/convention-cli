@@ -85,6 +85,8 @@ export const OAUTH_PROVIDERS = {
     // 기본 리다이렉트 포트
     defaultRedirectPort: 8766,
   },
+  // OpenAI Codex에 관한 설정들을 모아둔 곳입니다.
+  // 추후에 OpenAI Codex와 관련된 기능이 추가된다면 이곳에 추가하면 됩니다.
 };
 
 /**
