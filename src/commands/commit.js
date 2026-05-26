@@ -99,7 +99,12 @@ function isLocalLLMBaseURLLocal(baseURL) {
  */
 function isExternalAIProvider(config = {}) {
   // gemini 또는 openaiCompatible이면 외부 AI Provider
-  if (config.provider === "gemini" || config.provider === "openaiCompatible") {
+  if (
+    config.provider === "gemini" ||
+    config.provider === "openaiCompatible" ||
+    // codex-mcp는 로컬 subprocess를 통해 Codex CLI를 호출하지만, 실제 prompt 처리는 Codex/OpenAI 계정으로 이동할 수 있으므로 외부 AI로 간주합니다.
+    config.provider === "codex-mcp"
+  ) {
     return true;
   }
 
