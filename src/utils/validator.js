@@ -17,6 +17,7 @@ export function isValidLanguage(language) {
 /**
  * 지정한 provider가 지원되는 AI Provider인지 확인합니다.
  * 2차 MVP 기본 제공 모델 외에도 OAuth 연동 대상인 github-copilot, antigravity 등을 유효한 모델로 허용합니다.
+ * codex-mcp는 Codex CLI MCP server를 호출하는 정식 provider key이므로 PROVIDERS 목록을 통해 허용됩니다.
  * 
  * @param {string} provider - 검증할 AI Provider 이름
  * @returns {boolean} 지원 여부
