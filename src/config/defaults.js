@@ -56,9 +56,15 @@ export const SUPPORTED_LANGUAGES = ["ko", "en", "jp", "cn"];
 
 /**
  * 2차 MVP에서 실제 설정 및 라우팅 대상으로 다루는 Provider 목록입니다.
- * mock(테스트용), localLLM(로컬 서버용), gemini(클라우드용) 등이 포함됩니다.
+ * mock(테스트용), localLLM(로컬 서버용), gemini(클라우드용), codex-mcp(Codex CLI MCP server 연동) 등이 포함됩니다.
  */
-export const PROVIDERS = ["mock", "localLLM", "gemini", "openaiCompatible"];
+export const PROVIDERS = [
+  "mock",
+  "localLLM",
+  "gemini",
+  "openaiCompatible",
+  "codex-mcp",
+];
 
 /**
  * localLLM의 기준 endpoint입니다. Ollama의 기본 포트인 11434를 기본값으로 사용합니다.
@@ -72,6 +78,7 @@ export const DEFAULT_LOCAL_LLM_BASE_URL = "http://localhost:11434/v1";
 export const STABLE_PROVIDERS = [
   "gemini",
   "codex",
+  "codex-mcp",
   "claude",
   "grok",
   "deepseek",
