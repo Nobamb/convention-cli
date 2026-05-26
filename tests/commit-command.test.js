@@ -361,6 +361,25 @@ test('runBatchCommit does not call OpenAI-compatible provider or commit when ext
   });
 });
 
+test('runBatchCommit does not start Codex MCP provider or commit when external AI transmission is rejected', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    prompts.inject([false]);
+    saveRuntimeConfig({
+      mode: 'batch',
+      provider: 'codex-mcp',
+      authType: 'none',
+      modelVersion: 'gpt-5.3-codex',
+      confirmBeforeCommit: false,
+    });
+    writeFile(repoDir, 'README.md', 'codex mcp rejected change\n');
+
+    await commands.runBatchCommit();
+
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: initial commit');
+    assert.match(getStatus(repoDir), /^ M README\.md/m);
+  });
+});
+
 test('runBatchCommit requires confirmation for OpenAI-compatible http custom endpoint and rejection prevents fetch', { skip: skipWithoutGit }, async () => {
   await withRepo(async (repoDir) => {
     let fetchCalled = false;
