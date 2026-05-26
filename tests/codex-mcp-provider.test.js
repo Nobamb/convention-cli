@@ -102,9 +102,15 @@ test("codex-mcp provider completes MCP lifecycle and extracts structuredContent"
   });
 
   assert.equal(message, "feat: add codex mcp provider");
-  assert.equal(calls[0].command, "codex");
-  assert.deepEqual(calls[0].args, ["mcp-server"]);
-  assert.equal(calls[0].options.shell, false);
+  if (process.platform === "win32") {
+    assert.equal(calls[0].command, "codex mcp-server");
+    assert.deepEqual(calls[0].args, []);
+  } else {
+    assert.equal(calls[0].command, "codex");
+    assert.deepEqual(calls[0].args, ["mcp-server"]);
+  }
+  const expectedShell = process.platform === "win32" ? true : false;
+  assert.equal(calls[0].options.shell, expectedShell);
   assert.deepEqual(calls[0].options.stdio, ["pipe", "pipe", "pipe"]);
   assert.deepEqual(
     fakeChild.requests.map((request) => request.method),
@@ -240,4 +246,32 @@ test("codex-mcp test helpers expose safe tool argument policy", () => {
   assert.equal(args["approval-policy"], "never");
   assert.equal(args.sandbox, "read-only");
   assert.equal(args.model, "gpt-5.3-codex");
+});
+
+test("codex-mcp provider detects inner JSON error from MCP response", async () => {
+  const fakeChild = createFakeCodexProcess({
+    toolResult: {
+      structuredContent: {
+        content: JSON.stringify({
+          type: "error",
+          status: 400,
+          error: {
+            type: "invalid_request_error",
+            message: "The 'gpt-5-mini' model is not supported when using Codex with a ChatGPT account."
+          }
+        })
+      }
+    }
+  });
+  const { spawnImpl } = createFakeSpawn(fakeChild);
+
+  await assert.rejects(
+    () =>
+      generateCommitMessage({
+        prompt: "Generate a commit message",
+        config: { authType: "none" },
+        spawnImpl,
+      }),
+    /The 'gpt-5-mini' model is not supported/
+  );
 });
