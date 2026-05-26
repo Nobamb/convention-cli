@@ -41,18 +41,21 @@ async function importWithTempHome() {
     import.meta.url,
   );
   githubCopilotUrl.search = `?t=${stamp}`;
+  const codexMCPUrl = new URL("../src/providers/codex-mcp.js", import.meta.url);
+  codexMCPUrl.search = `?t=${stamp}`;
 
   const providers = await import(providersUrl.href);
   const ai = await import(aiUrl.href);
   const oauth = await import(oauthUrl.href);
   const mock = await import(mockUrl.href);
   const githubCopilot = await import(githubCopilotUrl.href);
+  const codexMCP = await import(codexMCPUrl.href);
 
   function cleanup() {
     // 파일 단위 임시 HOME을 공유하므로 개별 테스트에서는 환경을 되돌리지 않습니다.
   }
 
-  return { providers, ai, oauth, mock, githubCopilot, cleanup };
+  return { providers, ai, oauth, mock, githubCopilot, codexMCP, cleanup };
 }
 
 test("getProvider returns the mock provider by default", async () => {
@@ -219,6 +222,23 @@ test("Antigravity experimental request injects OAuth Bearer header when baseURL 
     assert.equal(capturedAuthorization, "Bearer antigravity-token");
   } finally {
     global.fetch = previousFetch;
+    cleanup();
+  }
+});
+
+test("provider routing includes codex-mcp without OAuth credential lookup", async () => {
+  const { providers, cleanup } = await importWithTempHome();
+
+  try {
+    const provider = providers.getProvider("codex-mcp");
+
+    assert.equal(typeof provider.generateCommitMessage, "function");
+    assert.equal(typeof provider.listModels, "function");
+    assert.deepEqual(
+      await providers.listProviderModels({ provider: "codex-mcp", authType: "none" }),
+      ["gpt-5.3-codex"],
+    );
+  } finally {
     cleanup();
   }
 });
