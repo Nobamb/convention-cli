@@ -688,12 +688,25 @@ export async function selectModelVersion(models) {
     throw new Error("선택할 수 있는 모델 목록이 없습니다.");
   }
 
+  // 테스트 샌드박스 격리가 정적 임포트 타이밍으로 인해 무너지지 않도록 동적 임포트합니다.
+  const { loadConfig } = await import("../config/store.js");
+  const config = loadConfig();
+  const currentModel = config.modelVersion;
+
+  const choices = models.map((m) => {
+    const isCurrent = m === currentModel;
+    return {
+      title: isCurrent ? `${m} (current)` : m,
+      value: m,
+    };
+  });
+
   // 사용할 모델 선택
   const response = await prompts({
     type: "select",
     name: "modelVersion",
     message: "사용할 모델을 선택하세요.",
-    choices: toSelectChoices(models),
+    choices,
   });
 
   // 모델 선택이 취소되면 에러 발생
@@ -743,11 +756,29 @@ export async function promptSecret(message) {
  * @returns {Promise<string>}
  */
 export async function selectProvider(providers) {
+  // 테스트 샌드박스 격리가 정적 임포트 타이밍으로 인해 무너지지 않도록 동적 임포트합니다.
+  const { loadConfig } = await import("../config/store.js");
+  const config = loadConfig();
+  const currentProvider = config.provider;
+  const currentModel = config.modelVersion;
+
+  const message = currentProvider
+    ? `사용할 AI 에이전트를 선택하세요. (현재 설정: ${currentProvider}${currentModel ? ` [${currentModel}]` : ""})`
+    : "사용할 AI 에이전트를 선택하세요.";
+
+  const choices = providers.map((p) => {
+    const isCurrent = p === currentProvider;
+    return {
+      title: isCurrent ? `${p} (current)` : p,
+      value: p,
+    };
+  });
+
   const response = await prompts({
     type: "select",
     name: "provider",
-    message: "사용할 AI 에이전트를 선택하세요.",
-    choices: toSelectChoices(providers),
+    message,
+    choices,
   });
 
   if (typeof response.provider !== "string") {
