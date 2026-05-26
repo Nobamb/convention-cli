@@ -17,6 +17,7 @@ ${chalk.yellow('Options:')}
   --set-mode <mode> 기본 실행 모드를 설정합니다. (사용 가능 값: step, batch)
   --language <lang> 커밋 메시지 생성 언어를 설정합니다. (사용 가능 값: ko, en, jp, cn)
   -q, --question    커밋 메시지 생성 후 커밋 여부를 물어볼지 설정합니다. (true, false)
+  -m, --model [arg] AI Provider 및 모델 설정을 저장합니다. (예: convention -m github-copilot oauth)
   --template [act]  커밋 템플릿을 관리합니다. (사용 가능 값: init, show, validate)
   --help, -h        도움말을 출력합니다.
   --version, -v     버전을 출력합니다.
