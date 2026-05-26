@@ -376,8 +376,10 @@ export function buildAuthorizationUrl({
     // 중복을 제거하고 스코프를 설정합니다.
     new Set([...providerConfig.scopes, ...(scopes || [])]),
   );
-  // 스코프를 설정합니다.
-  authUrl.searchParams.set("scope", finalScopes.join(" "));
+  // 스코프를 설정합니다. GitHub Copilot처럼 최소 권한을 위해 빈 scope를 쓰는 provider는 scope 파라미터 자체를 생략합니다.
+  if (finalScopes.length > 0) {
+    authUrl.searchParams.set("scope", finalScopes.join(" "));
+  }
 
   // PKCE를 지원하고 codeChallenge가 있으면 설정합니다.
   if (providerConfig.supportsPKCE && codeChallenge) {
