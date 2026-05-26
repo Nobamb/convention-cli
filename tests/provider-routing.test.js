@@ -36,17 +36,23 @@ async function importWithTempHome() {
   oauthUrl.search = `?t=${stamp}`;
   const mockUrl = new URL("../src/providers/mock.js", import.meta.url);
   mockUrl.search = `?t=${stamp}`;
+  const githubCopilotUrl = new URL(
+    "../src/providers/github-copilot.js",
+    import.meta.url,
+  );
+  githubCopilotUrl.search = `?t=${stamp}`;
 
   const providers = await import(providersUrl.href);
   const ai = await import(aiUrl.href);
   const oauth = await import(oauthUrl.href);
   const mock = await import(mockUrl.href);
+  const githubCopilot = await import(githubCopilotUrl.href);
 
   function cleanup() {
     // 파일 단위 임시 HOME을 공유하므로 개별 테스트에서는 환경을 되돌리지 않습니다.
   }
 
-  return { providers, ai, oauth, mock, cleanup };
+  return { providers, ai, oauth, mock, githubCopilot, cleanup };
 }
 
 test("getProvider returns the mock provider by default", async () => {
@@ -213,6 +219,84 @@ test("Antigravity experimental request injects OAuth Bearer header when baseURL 
     assert.equal(capturedAuthorization, "Bearer antigravity-token");
   } finally {
     global.fetch = previousFetch;
+    cleanup();
+  }
+});
+
+test("GitHub Copilot commit generation times out and still cleans up SDK resources", async () => {
+  const { githubCopilot, cleanup } = await importWithTempHome();
+  let disconnected = false;
+  let stopped = false;
+
+  class CopilotClient {
+    async createSession() {
+      return {
+        sendAndWait: async () => new Promise(() => {}),
+        disconnect: async () => {
+          disconnected = true;
+        },
+      };
+    }
+
+    async stop() {
+      stopped = true;
+    }
+  }
+
+  try {
+    await assert.rejects(
+      () =>
+        githubCopilot.generateCommitMessage({
+          prompt: "Generate a commit message",
+          config: {
+            experimentalGitHubCopilot: true,
+            timeoutMs: 5,
+          },
+          oauthAccessToken: "github-copilot-token",
+          sdkModule: { CopilotClient },
+        }),
+      /GitHub Copilot SDK commit message generation timed out after 5ms/,
+    );
+
+    assert.equal(disconnected, true);
+    assert.equal(stopped, true);
+  } finally {
+    cleanup();
+  }
+});
+
+test("GitHub Copilot model list request times out and still stops SDK client", async () => {
+  const { githubCopilot, cleanup } = await importWithTempHome();
+  let stopped = false;
+
+  class CopilotClient {
+    async listModels() {
+      return new Promise(() => {});
+    }
+
+    async stop() {
+      stopped = true;
+    }
+  }
+
+  try {
+    await assert.rejects(
+      () =>
+        githubCopilot.listModels(
+          {
+            experimentalGitHubCopilot: true,
+            timeoutMs: 5,
+          },
+          {
+            oauthAccessToken: "github-copilot-token",
+            sdkModule: { CopilotClient },
+          },
+        ),
+      /GitHub Copilot SDK model list request timed out after 5ms/,
+    );
+
+    assert.equal(stopped, true);
+  } finally {
     cleanup();
   }
 });
