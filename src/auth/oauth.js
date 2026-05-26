@@ -51,8 +51,14 @@ export function launchBrowser(url) {
   try {
     // 윈도우 운영체제일 경우
     if (platform === "win32") {
-      // cmd 명령어로 브라우저를 엽니다.
-      childProcess.execFileSync("cmd.exe", ["/c", "start", "", url]);
+      // cmd.exe /c start나 explorer.exe는 URL이 길거나 특정 문자가 섞이면 문서 폴더를 여는 등의 오작동이 일어날 수 있습니다.
+      // powershell.exe의 Start-Process 명령어를 사용하면 앰퍼샌드(&) 및 특수 문자 파싱 충돌 없이 기본 브라우저를 가장 정확하게 열어줍니다.
+      childProcess.execFileSync("powershell.exe", [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `Start-Process '${url.replace(/'/g, "''")}'`
+      ]);
     }
     // 맥 운영체제일 경우
     else if (platform === "darwin") {
@@ -165,6 +171,8 @@ export async function startLocalCallbackServer({
 } = {}) {
   // 콜백 경로를 정규화합니다.
   const normalizedPath = normalizeCallbackPath(callbackPath);
+  // 포트를 리스닝 시작 시점에 단 한 번 안전하게 보관하여 서버 종료 중 발생하는 address() null 참조 에러를 방지합니다.
+  let serverPort = 0;
   // 타임아웃을 설정합니다.
   let timeoutId;
   // 콜백이 정착되었는지 확인합니다.
@@ -187,10 +195,8 @@ export async function startLocalCallbackServer({
 
   // HTTP 서버를 생성합니다.
   const server = http.createServer((req, res) => {
-    // 서버 주소를 가져옵니다.
-    const address = server.address();
-    // origin을 설정합니다.
-    const origin = `http://127.0.0.1:${address.port}`;
+    // 서버가 닫히는 과정(closeServer)에서 address()가 null을 리턴하더라도 안전하도록 리스닝 완료 시점에 저장된 포트를 사용합니다.
+    const origin = `http://127.0.0.1:${serverPort}`;
 
     // HTTP 요청을 처리합니다.
     try {
@@ -282,15 +288,18 @@ export async function startLocalCallbackServer({
     // 0번 포트를 잡고 리스닝을 시작합니다.
     server.listen(0, "127.0.0.1", () => {
       server.off("error", reject);
+      // 리스닝 완료 시점에 동적으로 할당된 포트를 조회하여 기록합니다.
+      const address = server.address();
+      serverPort = address?.port || 0;
       // 콜백 서버를 성공적으로 실행했으므로 resolve 합니다.
       resolve();
     });
   });
 
-  // 서버 주소를 가져옵니다.
-  const address = server.address();
   // 리다이렉트 URI를 설정합니다.
-  const redirectUri = `http://127.0.0.1:${address.port}${normalizedPath}`;
+  // GitHub OAuth는 localhost로 등록된 콜백에 대해서는 포트 번호 불일치를 무시하고 허용해 주는 정책을 갖고 있습니다.
+  // 127.0.0.1 대신 localhost 도메인명을 명시해 주어야 임의 포트 바인딩 시 mismatch 오류를 막을 수 있습니다.
+  const redirectUri = `http://localhost:${serverPort}${normalizedPath}`;
 
   // 타임아웃을 설정합니다.
   timeoutId = setTimeout(() => {
