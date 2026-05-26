@@ -36,8 +36,9 @@ export const OAUTH_PROVIDERS = {
     authUrl: "https://github.com/login/oauth/authorize",
     // 깃허브 코파일럿 액세스 토큰을 발급받는 url입니다.
     tokenUrl: "https://github.com/login/oauth/access_token",
-    // 깃허브 코파일럿 액세스 토큰 발급 시 필요한 스코프입니다.
-    scopes: ["read:user"],
+    // GitHub Copilot SDK 문서는 사용자 OAuth token을 SDK에 전달하는 방식을 안내합니다.
+    // read:user 같은 추가 scope가 commit message 생성에 필수라고 확인되기 전까지는 과도한 권한을 요청하지 않습니다.
+    scopes: [],
     // 깃허브 코파일럿 클라이언트 아이디와 클라이언트 시크릿을 저장하는 객체입니다.
     client: {
       idEnv: "CONVENTION_GITHUB_CLIENT_ID",
@@ -48,6 +49,12 @@ export const OAUTH_PROVIDERS = {
     supportsPKCE: true,
     // 토큰 갱신 여부
     supportsRefresh: false,
+    // GitHub OAuth endpoint 자체는 공식 GitHub OAuth 문서와 Copilot SDK 문서로 확인된 경로입니다.
+    oauthAvailable: true,
+    // Copilot SDK가 preview 상태이므로 provider 설정과 실제 SDK 호출 모두 명시 opt-in 뒤에만 허용합니다.
+    requiresExperimentalOptIn: true,
+    // 빈 scope는 GitHub OAuth에서 허용 가능한 최소 권한 요청이므로 provider validator에서 예외로 허용합니다.
+    allowEmptyScopes: true,
     // 기본 리다이렉트 포트
     defaultRedirectPort: 8765,
   },
@@ -177,8 +184,8 @@ export function validateOAuthProviderConfig(provider, config) {
   if (!Array.isArray(scopes)) {
     throw new Error(`[${provider}] scopes must be an array`);
   }
-  // scopes에 내용이 없으면 에러를 던집니다.
-  if (scopes.length === 0) {
+  // scopes에 내용이 없으면 기본적으로 에러를 던지되, 최소 권한 OAuth가 명시된 provider는 허용합니다.
+  if (scopes.length === 0 && config.allowEmptyScopes !== true) {
     throw new Error(`[${provider}] scopes must contain at least one scope`);
   }
 
