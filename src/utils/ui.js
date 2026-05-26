@@ -321,6 +321,49 @@ export async function confirmReplaceApiKey(provider) {
 }
 
 /**
+ * 저장된 GitHub Copilot OAuth session이 있을 때 다음 동작을 선택합니다.
+ * access token, refresh token, client secret 같은 민감 값은 표시하지 않고 연결 존재 여부만 기준으로 안내합니다.
+ *
+ * @returns {Promise<string>} 'keep', 'logout', 'cancel' 중 하나입니다.
+ */
+export async function selectCopilotSessionAction() {
+  // GitHub Copilot OAuth 연결이 이미 존재할 때 사용자에게 보여줄 선택지들을 정의합니다.
+  const choices = [
+    {
+      title: "Keep current connection",
+      value: "keep",
+    },
+    {
+      title: "Logout and re-authenticate",
+      value: "logout",
+    },
+    {
+      title: "Cancel",
+      value: "cancel",
+    },
+  ];
+  // prompt를 띄워 사용자에게 선택지를 보여주고, 그 결과를 반환합니다.
+  const response = await prompts(
+    {
+      type: "select",
+      name: "action",
+      message:
+        "GitHub Copilot OAuth connection already exists. What would you like to do?",
+      choices,
+      initial: 0,
+    },
+    {
+      // 선택 UI가 취소되면 token이나 config를 건드리지 않는 cancel 흐름으로 처리합니다.
+      onCancel: () => false,
+    },
+  );
+  // 응답에서 action이 유효하면 반환하고, 그렇지 않으면 cancel을 반환합니다.
+  return choices.some((choice) => choice.value === response?.action)
+    ? response.action
+    : "cancel";
+}
+
+/**
  * HTTP 429(사용량 소진) 또는 연결 실패 같은 AI Provider 오류가 발생했을 때 다음 행동을 선택합니다.
  *
  * @param {object} options
