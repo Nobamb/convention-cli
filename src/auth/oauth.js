@@ -196,7 +196,8 @@ export async function startLocalCallbackServer({
   // HTTP 서버를 생성합니다.
   const server = http.createServer((req, res) => {
     // 서버가 닫히는 과정(closeServer)에서 address()가 null을 리턴하더라도 안전하도록 리스닝 완료 시점에 저장된 포트를 사용합니다.
-    const origin = `http://127.0.0.1:${serverPort}`;
+    // 깃허브 등 루프백 와일드카드 검증 시 일관된 도메인(localhost)을 확보하기 위해 origin 역시 localhost를 사용합니다.
+    const origin = `http://localhost:${serverPort}`;
 
     // HTTP 요청을 처리합니다.
     try {
