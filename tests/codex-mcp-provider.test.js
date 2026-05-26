@@ -227,9 +227,14 @@ test("codex-mcp provider does not start MCP server for unsupported authType", as
   assert.equal(spawnCalled, false);
 });
 
-test("codex-mcp listModels avoids MCP subprocess and returns configured or default model", async () => {
-  assert.deepEqual(await listModels({ modelVersion: "gpt-5.4" }), ["gpt-5.4"]);
-  assert.deepEqual(await listModels({}), ["gpt-5.3-codex"]);
+test("codex-mcp listModels avoids MCP subprocess and returns configured or default model list", async () => {
+  const modelsWithConfig = await listModels({ modelVersion: "gpt-5.4" });
+  assert.equal(modelsWithConfig[0], "gpt-5.4");
+  assert.equal(modelsWithConfig.includes("gpt-5.3-codex"), true);
+
+  const defaultModels = await listModels({});
+  assert.equal(defaultModels[0], "gpt-5.3-codex");
+  assert.equal(defaultModels.length, 5);
 });
 
 test("codex-mcp validateConfig only accepts none authType", () => {
