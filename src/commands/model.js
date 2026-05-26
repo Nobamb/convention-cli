@@ -95,6 +95,8 @@ const SUPPORTED_AUTH_TYPES_BY_PROVIDER = {
   openaiCompatible: ["api", "none"],
   antigravity: ["oauth"],
   "github-copilot": ["oauth"],
+  // codex-mcp는 Codex CLI가 자체적으로 인증을 처리하므로 convention-cli credentials에는 아무 것도 저장하지 않습니다.
+  "codex-mcp": ["none"],
 };
 
 /**
@@ -108,6 +110,8 @@ const DEFAULT_MODEL_VERSION_BY_PROVIDER = {
   openaiCompatible: "latest",
   antigravity: "antigravity-1",
   "github-copilot": "gpt-4.1",
+  // Codex MCP server가 직접 모델 목록을 안정적으로 제공하지 않아도 설정을 완성할 수 있도록 기본 모델명을 둡니다.
+  "codex-mcp": "gpt-5.3-codex",
 };
 
 /**
