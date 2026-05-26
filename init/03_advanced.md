@@ -148,8 +148,22 @@ AA. OAuth Token Store Agent
 AB. OAuth Refresh Agent
 AC. OAuth Provider Integration Agent
 
+**실증 구현체: GitHub Copilot (`github-copilot`) OAuth & SDK 통합**
+- `@github/copilot-sdk` 및 GitHub OAuth 연동을 통해 브라우저 기반 인증을 완수합니다.
+- 토큰 발급 완료 후 `credentials.json`의 `oauth.github-copilot` 네임스페이스 아래에 격리하여 저장합니다.
+
+**3차 고도화 주요 패치 (윈도우 환경 및 비동기 안정성 확보)**
+1. **Windows 셸 특수문자 탈출 버그 수정**: 
+   - 윈도우 환경에서 `launchBrowser` 시, `cmd.exe /c start`를 사용하면 URL 내의 앰퍼샌드(`&`)가 명령 구분 기호로 강제 파싱되어 `client_id` 명령어 없음 에러가 발생하던 문제를 `powershell.exe` 기반의 `Start-Process` 기동 방식으로 변경해 해결했습니다.
+2. **동적 포트 바인딩 및 깃허브 Wildcard 대응**:
+   - 로컬 콜백 포트는 실행할 때마다 무작위로 동적 할당되며, 깃허브의 로컬 호스트 포트 와일드카드 정책에 정합하기 위해 리다이렉트 호스트명을 `127.0.0.1`에서 `localhost`로 통일했습니다.
+3. **비동기 정리 시 Null 참조 크래시 방지**:
+   - OAuth 인증 성공 리액션 시 브라우저가 연쇄적으로 보내는 중복 커넥션 요청으로 인해 `server.close()` 도중 `server.address()`가 `null`을 반환하며 발생하던 `TypeError: Cannot read properties of null (reading 'port')` 크래시를 방지하기 위해, 리스닝 시작 콜백 시점에 단 한 번 포트 번호를 상수화(`serverPort`)하는 안전 구조로 개편했습니다.
+4. **SDK 백그라운드 구동(start) 보완**:
+   - SDK의 `listModels()` API가 자동으로 서버 구동(`client.start()`)을 해주지 않아 발생하는 `Client not connected` 예외를 사전에 감지하고, 목록 조회 전에 `await client.start()`를 명시적으로 실행하는 안전장치를 추가했습니다.
+
 목표:
-API Key 없이 브라우저 로그인 기반 인증 가능
+API Key 없이 브라우저 로그인 기반 인증 가능 및 윈도우/비동기 안정성이 검증된 OAuth 기능 구축
 
 ### Phase 6. PR 자동화
 
