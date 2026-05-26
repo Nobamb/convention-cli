@@ -91,11 +91,13 @@ convention --question
 # Short alias
 convention -q
 
-# Configure an AI provider/model
+# Configure an AI provider/model (Short alias: -m)
+convention -m
 convention --model
-convention --model gemini api
+convention -m gemini api
+convention -m github-copilot oauth
 convention --model openaiCompatible api "gpt-compatible"
-convention --model localLLM none "qwen2.5:7b"
+convention -m localLLM none "qwen2.5:7b"
 
 # Manage custom commit templates (action: init, show, validate)
 convention --template
@@ -107,6 +109,24 @@ convention --template init
 API keys are stored in `~/.config/convention/credentials.json`, not in `config.json`. If `--model` is run for an API-key provider that already has a stored key, Convention CLI asks whether to replace it before continuing.
 
 During `convention`, `--step`, or `--batch`, a Gemini/OpenAI-compatible HTTP 429 or usage-exhausted response opens a terminal choice: enter another API key and retry, switch provider/model through the existing model setup flow and retry, or stop without staging or committing.
+
+### GitHub Copilot Integration (Experimental)
+
+To use GitHub Copilot as the AI provider:
+1. Create a GitHub OAuth App in **Settings > Developer settings > OAuth Apps > Register a new application**.
+   - **Homepage URL**: `http://localhost`
+   - **Authorization callback URL**: `http://localhost/oauth/callback`
+2. Export your client details as environment variables in your terminal:
+   ```bash
+   export CONVENTION_GITHUB_CLIENT_ID="your_client_id"
+   export CONVENTION_GITHUB_CLIENT_SECRET="your_client_secret"
+   ```
+3. Enable the experimental opt-in either by setting `CONVENTION_EXPERIMENTAL_GITHUB_COPILOT=true` as an environment variable or by adding `"experimentalGitHubCopilot": true` in `~/.config/convention/config.json`.
+4. Configure the model:
+   ```bash
+   convention -m github-copilot oauth
+   ```
+   This will automatically trigger a browser-based OAuth flow using PKCE, storing the token safely under `credentials.json` namespace.
 
 ---
 
@@ -170,11 +190,13 @@ convention --question
 # 짧은 옵션
 convention -q
 
-# AI Provider 및 모델 설정
+# AI Provider 및 모델 설정 (단축 별칭: -m)
+convention -m
 convention --model
-convention --model gemini api
+convention -m gemini api
+convention -m github-copilot oauth
 convention --model openaiCompatible api "gpt-compatible"
-convention --model localLLM none "qwen2.5:7b"
+convention -m localLLM none "qwen2.5:7b"
 ```
 
 ### API Key 및 429 에러 복구
@@ -182,6 +204,36 @@ convention --model localLLM none "qwen2.5:7b"
 API Key는 `config.json`이 아닌 `~/.config/convention/credentials.json`에 별도로 저장됩니다. 이미 API Key가 저장된 Provider에 대해 `--model` 설정을 다시 실행하면, 기존 키를 교체할지 먼저 확인합니다.
 
 `convention`, `--step`, 또는 `--batch` 실행 중 Gemini나 OpenAI 호환 API에서 HTTP 429(Rate Limit) 또는 할당량 초과 응답이 발생하면 터미널에서 다음 중 하나를 선택할 수 있습니다: 다른 API Key를 입력하고 재시도, 기존 모델 설정 흐름을 통해 Provider/모델을 변경하고 재시도, 혹은 Staging이나 커밋 없이 안전하게 중단.
+
+### GitHub Copilot 연동 가이드 (실험적 기능)
+
+GitHub Copilot을 AI 프로바이더로 사용하기 위한 절차는 다음과 같습니다.
+
+1. **GitHub OAuth App 생성**:
+   - GitHub의 **[Settings > Developer settings > OAuth Apps > Register a new application](https://github.com/settings/developers)**으로 이동합니다.
+   - 다음과 같이 설정하여 등록합니다:
+     - **Homepage URL**: `http://localhost`
+     - **Authorization callback URL**: `http://localhost/oauth/callback` *(포트번호를 붙이지 말고 정확히 기입합니다)*
+   - 생성된 **Client ID**와 **Client Secret**을 복사합니다.
+
+2. **환경 변수 지정**:
+   터미널에서 복사한 키들을 환경 변수로 선언해 줍니다.
+   ```powershell
+   # Windows PowerShell 기준
+   $env:CONVENTION_GITHUB_CLIENT_ID="복사한_Client_ID"
+   $env:CONVENTION_GITHUB_CLIENT_SECRET="복사한_Client_Secret"
+   ```
+
+3. **실험적 기능 허용 (Opt-in)**:
+   GitHub Copilot은 현재 실험적 프로바이더이므로 명시적 활성화가 필요합니다.
+   - **방법 A**: 터미널에 `$env:CONVENTION_EXPERIMENTAL_GITHUB_COPILOT="true"` 환경 변수 제공
+   - **방법 B**: `~/.config/convention/config.json`에 `"experimentalGitHubCopilot": true` 키 추가
+
+4. **모델 설정 진행**:
+   ```bash
+   convention -m github-copilot oauth
+   ```
+   명령어를 실행하면 웹 브라우저가 기동되며 깃허브 소셜 로그인이 가동됩니다. 연동이 끝나면 발급된 토큰이 `credentials.json`의 `oauth.github-copilot` 공간에 자동으로 안전하게 기록됩니다.
 
 기본 설정 파일은 `~/.config/convention/config.json`에 저장합니다. 1차 MVP의 기본 언어는 `ko`, 기본 모드는 `step`, `confirmBeforeCommit` 값은 `true`입니다.
 
