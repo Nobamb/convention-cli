@@ -1,7 +1,8 @@
 import { DEFAULT_LOCAL_LLM_BASE_URL, PROVIDERS } from "../config/defaults.js";
 import { loadConfig, saveConfig } from "../config/store.js";
 import { getApiKey, promptApiKey, saveApiKey } from "../auth/apiKey.js";
-import { startOAuthFlow } from "../auth/oauth.js";
+import { clearOAuthTokens, loadOAuthTokens, startOAuthFlow } from "../auth/oauth.js";
+import { isGitHubCopilotOptedIn } from "../providers/github-copilot.js";
 import { listProviderModels } from "../providers/index.js";
 import { isUsageExhaustedError } from "../providers/errors.js";
 import { normalizeLocalLLMConfig } from "../providers/localLLM.js";
@@ -11,6 +12,7 @@ import {
   confirmReplaceApiKey,
   selectAIUsageExhaustedAction,
   selectAuthType,
+  selectCopilotSessionAction,
   selectModelVersion,
   selectProvider,
 } from "../utils/ui.js";
@@ -105,7 +107,7 @@ const DEFAULT_MODEL_VERSION_BY_PROVIDER = {
   gemini: "gemini-3-flash-preview",
   openaiCompatible: "latest",
   antigravity: "antigravity-1",
-  "github-copilot": "copilot-codex",
+  "github-copilot": "gpt-4.1",
 };
 
 /**
@@ -176,6 +178,77 @@ function removeSecretConfigFields(config) {
 
   // safeConfig를 반환합니다.
   return safeConfig;
+}
+
+/**
+ * --model UI에서 보여줄 provider 목록을 구성합니다.
+ * github-copilot은 preview SDK/OAuth 연동이므로 기본 목록에는 숨기고, config나 환경변수로 명시 opt-in 된 경우에만 추가합니다.
+ *
+ * @param {object} config - 현재 사용자 설정입니다.
+ * @returns {string[]} 선택 가능한 provider 목록입니다.
+ */
+function getSelectableProviders(config) {
+  // 기존 stable provider 목록은 그대로 유지해 기존 사용자의 선택 순서와 테스트 기대값을 흔들지 않습니다.
+  const providers = [...PROVIDERS];
+
+  // Copilot은 별도 opt-in 없이는 외부 OAuth/SDK 호출로 이어질 수 있으므로 기본 UI에는 노출하지 않습니다.
+  if (isGitHubCopilotOptedIn(config)) {
+    providers.push("github-copilot");
+  }
+
+  return providers;
+}
+
+/**
+ * GitHub Copilot provider 사용이 명시적으로 허용되었는지 확인하고, 허용된 경우 config에 opt-in 값을 반영합니다.
+ * 명령행에서 `--model github-copilot ...`처럼 provider를 직접 지정한 경우에는 실험 기능 안내 confirm을 거쳐 opt-in으로 간주합니다.
+ *
+ * @param {object} params
+ * @param {string} params.provider - 선택된 provider 이름입니다.
+ * @param {object} params.config - 현재 사용자 설정입니다.
+ * @param {boolean} params.explicitProvider - 사용자가 CLI 인자로 provider를 직접 지정했는지 여부입니다.
+ * @returns {Promise<object>} Copilot opt-in이 반영된 config입니다.
+ */
+async function ensureGitHubCopilotAllowed({
+  provider,
+  config,
+  explicitProvider,
+}) {
+  // Copilot이 아닌 provider는 기존 설정을 그대로 사용합니다.
+  if (provider !== "github-copilot") {
+    return config;
+  }
+
+  // 이미 config 또는 환경변수로 opt-in 된 경우에는 추가 confirm 없이 진행합니다.
+  if (isGitHubCopilotOptedIn(config)) {
+    return {
+      ...config,
+      experimentalGitHubCopilot: true,
+    };
+  }
+
+  // 기본 UI 목록에서는 Copilot을 숨기므로, 여기까지 온 경우는 명령행에서 provider를 직접 지정한 흐름입니다.
+  if (!explicitProvider) {
+    throw new Error(
+      "github-copilot requires explicit experimental opt-in before it can be selected.",
+    );
+  }
+
+  // preview SDK와 외부 Copilot 요청 특성을 사용자에게 명확히 알린 뒤에만 설정을 저장합니다.
+  const confirmed = await confirmExternalProviderRequest({
+    provider,
+    action:
+      "enable the experimental GitHub Copilot SDK/OAuth provider for this CLI",
+  });
+
+  if (!confirmed) {
+    throw new Error("github-copilot experimental opt-in was canceled.");
+  }
+
+  return {
+    ...config,
+    experimentalGitHubCopilot: true,
+  };
 }
 
 /**
@@ -257,6 +330,48 @@ async function ensureApiCredentials(
 }
 
 /**
+ * OAuth provider의 인증 상태를 확인하고 필요한 경우 로그인 flow를 실행합니다.
+ * github-copilot은 기존 token이 있을 때 keep/logout/cancel 선택지를 제공해 token 원문을 출력하지 않고 session을 관리합니다.
+ *
+ * @param {string} provider - OAuth provider 이름입니다.
+ * @param {object} config - OAuth 실행에 전달할 설정입니다.
+ */
+async function ensureOAuthCredentials(provider, config = {}) {
+  // GitHub Copilot은 token 재사용 여부를 명시적으로 선택하게 해서 의도치 않은 재인증이나 token 삭제를 막습니다.
+  if (provider === "github-copilot") {
+    const existingTokens = loadOAuthTokens(provider);
+
+    // token 값은 화면에 표시하지 않고 존재 여부만 기준으로 session 관리 UI를 보여줍니다.
+    if (existingTokens?.accessToken) {
+      const action = await selectCopilotSessionAction();
+
+      if (action === "keep") {
+        return;
+      }
+
+      if (action === "cancel") {
+        throw new Error("GitHub Copilot OAuth setup was canceled.");
+      }
+
+      // 로그아웃은 provider별 token namespace만 지우며, 다른 provider의 credential은 건드리지 않습니다.
+      const confirmed = await confirmExternalProviderRequest({
+        provider,
+        action: "remove the stored GitHub Copilot OAuth token and login again",
+      });
+
+      if (!confirmed) {
+        throw new Error("GitHub Copilot OAuth logout was canceled.");
+      }
+
+      clearOAuthTokens(provider);
+    }
+  }
+
+  // OAuth App client id/secret은 환경변수 기반 buildOAuthClientSettings에서 확인하며, secret prompt는 띄우지 않습니다.
+  await startOAuthFlow({ provider, config });
+}
+
+/**
  * API Key 혹은 OAuth 인증을 유형에 맞게 조율하여 자격 증명을 획득합니다.
  *
  * @param {string} provider - AI provider 이름
@@ -266,7 +381,7 @@ async function ensureApiCredentials(
 async function ensureCredentials(
   provider,
   authType,
-  { promptForExistingKey = true } = {},
+  { promptForExistingKey = true, config = {} } = {},
 ) {
   // authType이 api이면
   if (authType === "api") {
@@ -276,7 +391,7 @@ async function ensureCredentials(
   // authType이 oauth이면
   else if (authType === "oauth") {
     // OAuth 인증을 진행하고 토큰을 저장합니다.
-    await startOAuthFlow({ provider });
+    await ensureOAuthCredentials(provider, config);
   }
 }
 
@@ -468,15 +583,18 @@ function getAuthTypesForProvider(provider) {
  * @param {string} params.modelVersion - modelVersion
  */
 async function confirmExternalModelListRequest(config) {
-  // openaiCompatible provider 이외에는 모델 목록 조회가 필요 없으므로 true 반환
-  if (config.provider !== "openaiCompatible") {
+  // openaiCompatible과 github-copilot은 모델 목록 조회가 외부 endpoint/SDK 요청이므로 사용자 확인을 받습니다.
+  if (!["openaiCompatible", "github-copilot"].includes(config.provider)) {
     return true;
   }
 
-  // openaiCompatible provider는 모델 목록 조회가 필요하므로 사용자 확인
+  // 외부 provider는 모델 목록 조회가 필요하므로 사용자 확인
   const confirmed = await confirmExternalProviderRequest({
     provider: config.provider,
-    action: "request the model list from the configured endpoint",
+    action:
+      config.provider === "github-copilot"
+        ? "request the model list through the GitHub Copilot SDK"
+        : "request the model list from the configured endpoint",
     baseURL: config.baseURL,
   });
 
@@ -507,7 +625,7 @@ export async function setupModelInteractively({
   const config = loadConfig();
 
   // 1. Provider 선택 (없을 경우)
-  const selectedProvider = provider ?? (await selectProvider(PROVIDERS));
+  const selectedProvider = provider ?? (await selectProvider(getSelectableProviders(config)));
   // provider가 유효한지 확인합니다.
   assertProvider(selectedProvider);
 
@@ -531,6 +649,13 @@ export async function setupModelInteractively({
   // provider와 authType이 유효한지 확인ㄴ
   assertProviderAuthType(selectedProvider, selectedAuthType);
 
+  // GitHub Copilot은 preview SDK/OAuth 연동이므로 명시 opt-in 확인 뒤에만 다음 단계로 진행합니다.
+  const optInConfig = await ensureGitHubCopilotAllowed({
+    provider: selectedProvider,
+    config,
+    explicitProvider: provider === "github-copilot",
+  });
+
   // 직접 지정된 modelVersion은 UI를 건너뛰기 전에 저장 가능한 값인지 먼저 검증합니다.
   if (modelVersion !== undefined) {
     assertModelVersion(modelVersion);
@@ -541,7 +666,7 @@ export async function setupModelInteractively({
   // modelListConfig
   // config에 provider와 authType을 추가하여 모델 목록 조회를 위한 설정 객체 생성
   const modelListConfig = {
-    ...config,
+    ...optInConfig,
     provider: selectedProvider,
     authType: selectedAuthType,
   };
@@ -563,6 +688,7 @@ export async function setupModelInteractively({
   // 3. 자격 증명 확보 (API Key 입력 또는 OAuth 로그인 실행)
   await ensureCredentials(selectedProvider, selectedAuthType, {
     promptForExistingKey: !handledExistingApiKey,
+    config: modelListConfig,
   });
 
   // 4. 모델 버전 선택 (없을 경우)
@@ -584,7 +710,7 @@ export async function setupModelInteractively({
 
   // 5. 최종 설정 병합 및 저장
   // config에 provider와 authType을 추가하여 모델 목록 조회를 위한 설정 객체 생성
-  const nextConfig = buildModelConfig(config, {
+  const nextConfig = buildModelConfig(optInConfig, {
     provider: selectedProvider,
     authType: selectedAuthType,
     modelVersion: selectedModelVersion,
@@ -653,12 +779,18 @@ export async function setupModelDirectly(provider, authType, modelVersion) {
 
   // Config 파일 불러오기
   const config = loadConfig();
+  // GitHub Copilot은 명령행에서 직접 지정한 경우에도 실험 기능 안내 confirm을 거친 뒤에만 저장합니다.
+  const optInConfig = await ensureGitHubCopilotAllowed({
+    provider,
+    config,
+    explicitProvider: provider === "github-copilot",
+  });
 
   // AuthType에 따라 자격 증명 획득
-  await ensureCredentials(provider, authType);
+  await ensureCredentials(provider, authType, { config: optInConfig });
 
   // Config 빌드
-  const nextConfig = buildModelConfig(config, {
+  const nextConfig = buildModelConfig(optInConfig, {
     provider,
     authType,
     modelVersion: modelVersion.trim(),
