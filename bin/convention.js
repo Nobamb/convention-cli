@@ -64,7 +64,7 @@ program
     "커밋 메시지 생성 후 커밋 여부를 물어볼지 설정합니다. true 또는 false를 입력하거나, 값 없이 실행하면 대화형으로 선택합니다.",
   )
   .option(
-    "--model [values...]",
+    "-m, --model [values...]",
     "AI Provider/model 설정을 저장합니다. [provider] [authType] [modelVersion] 순으로 입력하거나, 인자 없이 실행 시 대화형 설정을 시작합니다.",
   );
 
