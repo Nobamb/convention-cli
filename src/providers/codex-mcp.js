@@ -140,14 +140,14 @@ function appendCappedStderr(current, chunk) {
  * @returns {string} 추출된 응답 문자열입니다.
  */
 function extractToolText(result) {
+  let text = "";
+  
   // Codex MCP 문서 예시의 최신 응답 위치입니다.
   if (typeof result?.structuredContent?.content === "string") {
-    return result.structuredContent.content;
-  }
-
-  // 일부 MCP client/server 조합은 content 배열에 text block을 담을 수 있습니다.
-  if (Array.isArray(result?.content)) {
-    return result.content
+    text = result.structuredContent.content;
+  } else if (Array.isArray(result?.content)) {
+    // 일부 MCP client/server 조합은 content 배열에 text block을 담을 수 있습니다.
+    text = result.content
       .map((item) => {
         // text block만 commit message 후보로 사용하고 다른 타입은 무시합니다.
         if (item?.type === "text" && typeof item.text === "string") {
@@ -159,8 +159,25 @@ function extractToolText(result) {
       .join("\n");
   }
 
-  // 알려진 응답 위치가 없으면 빈 문자열을 반환해 호출자가 명확한 오류로 처리하게 합니다.
-  return "";
+  const trimmed = text.trim();
+  // 반환된 결과가 JSON 형식의 에러 명세 문자열인지 파싱 및 예외 방어 처리를 수행합니다.
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed.type === "error" || parsed.error) {
+        const errorMsg = parsed.error?.message || parsed.message || "Codex MCP server internal error";
+        throw new Error(errorMsg);
+      }
+    } catch (e) {
+      // JSON 파싱 실패는 일반 텍스트일 수 있으므로 넘어가고,
+      // 명시적으로 던진 에러(Error) 유형인 경우에만 상위로 전파합니다.
+      if (e.message !== "Codex MCP response did not include a commit message." && !e.name.includes("SyntaxError")) {
+        throw e;
+      }
+    }
+  }
+
+  return text;
 }
 
 /**
@@ -214,7 +231,23 @@ function buildCodexToolArguments({ prompt, config = {} }) {
  * @returns {import("node:child_process").ChildProcess} Codex MCP server process입니다.
  */
 function startCodexMCPServer({ spawnImpl = defaultSpawn } = {}) {
-  // stdio MCP transport는 client가 server subprocess를 직접 시작하는 구조입니다.
+  const isWin = process.platform === "win32";
+  
+  // 윈도우 환경에서는 Node.js 최근 보안 패치(CVE-2024-27983 등) 영향으로 
+  // shell: false 상태에서 배치 파일(.cmd)을 직접 spawn하면 EINVAL이 발생합니다.
+  // 따라서 윈도우인 경우 shell: true를 사용하여 셸을 통해 배치 파일이 실행되도록 합니다.
+  // 이때 Node.js 최근 버전(v22, v24)에서 shell: true 상태로 args 배열을 함께 보낼 때 
+  // 출력되는 DEP0190 DeprecationWarning을 방지하기 위해 단일 문자열 명령어("codex mcp-server")로 묶어서 실행합니다.
+  if (isWin) {
+    return spawnImpl("codex mcp-server", [], {
+      cwd: process.cwd(),
+      stdio: ["pipe", "pipe", "pipe"],
+      shell: true,
+      windowsHide: true,
+    });
+  }
+
+  // Unix-like 플랫폼에서는 shell: false 및 인자 배열 방식을 철저히 고수합니다.
   return spawnImpl("codex", ["mcp-server"], {
     cwd: process.cwd(),
     stdio: ["pipe", "pipe", "pipe"],
