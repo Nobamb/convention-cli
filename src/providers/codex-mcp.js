@@ -3,6 +3,14 @@ import { spawn as defaultSpawn } from "node:child_process";
 // Codex MCP provider가 모델 목록을 직접 조회하지 않을 때 사용하는 기본 모델명입니다.
 // 사용자가 --model codex-mcp none <modelVersion> 형태로 명시하면 config.modelVersion이 우선됩니다.
 const DEFAULT_CODEX_MCP_MODEL = "gpt-5.3-codex";
+// Codex MCP 서버가 ChatGPT 또는 API 계정 연동 시 제공하는 가용 모델 후보군 목록입니다.
+const SUPPORTED_CODEX_MCP_MODELS = [
+  "gpt-5.3-codex", // 1순위 추천 모델 (기본값)
+  "gpt-5.5",
+  "gpt-5.4",
+  "gpt-5.4-mini",
+  "gpt-5.2"
+];
 // MCP stdio 서버가 시작되고 initialize 응답을 줄 때까지 기다리는 기본 제한 시간입니다.
 const DEFAULT_STARTUP_TIMEOUT_MS = 10000;
 // Codex MCP tool 호출이 commit message를 생성할 때까지 기다리는 기본 제한 시간입니다.
@@ -590,16 +598,19 @@ export async function generateCommitMessage({
  * @returns {Promise<string[]>} 선택 가능한 모델명 배열입니다.
  */
 export async function listModels(config = {}) {
-  // 사용자가 이미 지정한 모델이 있으면 그 값을 우선 표시합니다.
+  // 사용자가 이미 지정한 모델이 있고 가용 리스트에 포함되어 있다면, 
+  // 그 선택한 활성 모델을 배열 맨 처음에 두어 기본 커서 선택값으로 제안합니다.
   if (
     typeof config.modelVersion === "string" &&
     config.modelVersion.trim().length > 0
   ) {
-    return [config.modelVersion.trim()];
+    const activeModel = config.modelVersion.trim();
+    const filtered = SUPPORTED_CODEX_MCP_MODELS.filter((m) => m !== activeModel);
+    return [activeModel, ...filtered];
   }
 
-  // Codex MCP server를 실행하지 않고 기본 모델만 반환해 --model 설정 단계에서 불필요한 외부 호출을 피합니다.
-  return [DEFAULT_CODEX_MCP_MODEL];
+  // 전체 지원 모델 목록을 순서대로 반환합니다. (gpt-5.3-codex가 배열 맨 첫 자리에 위치)
+  return SUPPORTED_CODEX_MCP_MODELS;
 }
 
 /**
