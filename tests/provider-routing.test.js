@@ -270,6 +270,8 @@ test("GitHub Copilot model list request times out and still stops SDK client", a
   let stopped = false;
 
   class CopilotClient {
+    async start() {}
+
     async listModels() {
       return new Promise(() => {});
     }
