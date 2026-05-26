@@ -34,6 +34,10 @@ async function resolveOAuthHeaders(config) {
     // 유효한 액세스 토큰 획득 (만료 시 자동 리프레시 실행)
     const token = await getValidAccessToken(config.provider, config);
     return {
+      // SDK 기반 provider는 Authorization header 대신 원문 access token이 필요합니다.
+      // 이 값은 provider 호출 인자로만 전달하고 화면/로그에는 절대 출력하지 않습니다.
+      oauthAccessToken: token,
+      // HTTP 기반 OAuth provider와 기존 테스트 호환성을 위해 Bearer header도 함께 구성합니다.
       Authorization: `Bearer ${token}`,
     };
   }
@@ -85,10 +89,16 @@ export async function generateWithProvider({ prompt, config = {} }) {
   }
 
   // OAuth 인증 헤더 해결
-  const oauthHeaders = await resolveOAuthHeaders(config);
+  const oauthCredentials = await resolveOAuthHeaders(config);
+  const { oauthAccessToken, ...oauthHeaders } = oauthCredentials;
   
   // 헤더를 함께 주입하여 provider에 위임합니다.
-  return provider.generateCommitMessage({ prompt, config, headers: oauthHeaders });
+  return provider.generateCommitMessage({
+    prompt,
+    config,
+    headers: oauthHeaders,
+    oauthAccessToken,
+  });
 }
 
 /**
@@ -114,8 +124,9 @@ export async function listProviderModels(config = {}) {
   }
 
   // OAuth 인증 헤더 해결
-  const oauthHeaders = await resolveOAuthHeaders(config);
+  const oauthCredentials = await resolveOAuthHeaders(config);
+  const { oauthAccessToken, ...oauthHeaders } = oauthCredentials;
 
   // 모델 목록 반환
-  return provider.listModels(config, { headers: oauthHeaders });
+  return provider.listModels(config, { headers: oauthHeaders, oauthAccessToken });
 }
