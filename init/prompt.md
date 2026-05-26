@@ -424,6 +424,8 @@ test-A.md라는 파일을 한국어로 적어줘
 
 29-1. AC 단계는 OAuth Provider Integration Agent이므로 @work_process/advanced/AC/research-AC.md와 @work_process/advanced/AC/test-AC.md를 기반으로 authType이 oauth일 때 token 로드, Authorization header 구성, 만료 시 refresh 호출, 인증 실패 처리를 provider routing에 연결해줘. API Key 방식과 OAuth 방식이 서로 설정을 오염시키지 않도록 해줘.
 
+29-2. MCP 형태로 만들면 dangerous/dangerous12.md에 있던 문제점을 해결해서 codex를 convention-cli에 연동해서 사용할 수 있다고 하더라고 만약에 MCP 기반으로 구현이 가능하면 work_process\advanced 에 MCP폴더 만들어서 research, test 파일 만들어서 어떻게 해야 될 지 정리해주고 구현할 수 없으면 dangerous14.md 파일 만들어서 구체적으로 왜 MCP로도 CODEX를 연동해서 만들 수 없는지 정리해
+
 ### Phase 6. PR 자동화
 
 30. gpt-5.5 medium 모델 agent 1개를 AD 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AD 단계 참고해서 AD단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AD 폴더를 만들고 그 안에 test-AD.md로 정리해줘. 그리고 PR Prompt 구현 계획을 @work_process/advanced/AD/research-AD.md 파일로 정리해줘.
