@@ -1,6 +1,12 @@
 // GitHub Copilot SDK 공식 예제에서 사용하는 기본 모델명입니다.
 // 사용자가 --model 세 번째 인자로 다른 모델을 명시하면 그 값을 우선 사용합니다.
 const DEFAULT_COPILOT_MODEL = "gpt-4.1";
+// Copilot SDK 호출이 응답하지 않을 때 CLI가 무기한 대기하지 않도록 하는 기본 제한 시간입니다.
+// 다른 외부 provider와 같은 60초를 사용해서 사용자가 느끼는 대기 정책을 일관되게 유지합니다.
+const DEFAULT_TIMEOUT_MS = 60000;
+// SDK 세션과 client를 정리하는 단계는 본 요청보다 짧게 제한합니다.
+// 정리 작업 자체가 멈추면 원래 요청은 끝났는데도 CLI가 종료되지 않는 문제가 다시 생길 수 있습니다.
+const CLEANUP_TIMEOUT_MS = 5000;
 
 /**
  * GitHub Copilot provider가 실험 기능임을 명확하게 확인합니다.
@@ -35,6 +41,100 @@ async function loadCopilotSdk() {
     throw new Error(
       "GitHub Copilot SDK dependency is required. Install dependencies with `npm install` before using github-copilot.",
     );
+  }
+}
+
+/**
+ * 사용자 설정의 timeoutMs를 Copilot SDK 호출에 사용할 수 있는 양의 정수로 정규화합니다.
+ * 잘못된 값이 들어오면 setTimeout이 즉시 실행되거나 과도하게 오래 대기할 수 있으므로 기본값으로 되돌립니다.
+ *
+ * @param {object} config - 사용자 provider 설정입니다.
+ * @returns {number} 밀리초 단위 timeout 값입니다.
+ */
+function resolveTimeoutMs(config = {}) {
+  // config.timeoutMs가 숫자이고 안전한 양수일 때만 사용자 설정으로 인정합니다.
+  if (
+    Number.isFinite(config.timeoutMs) &&
+    Number.isSafeInteger(config.timeoutMs) &&
+    config.timeoutMs > 0
+  ) {
+    return config.timeoutMs;
+  }
+
+  // 문자열, 음수, Infinity, NaN 같은 값은 SDK 호출 시간을 예측하기 어렵게 만들 수 있어 기본값을 사용합니다.
+  return DEFAULT_TIMEOUT_MS;
+}
+
+/**
+ * timeout 오류 메시지를 짧고 안전한 형태로 생성합니다.
+ * prompt, OAuth token, SDK 내부 오류 객체는 포함하지 않아 민감 정보가 로그에 섞이지 않게 합니다.
+ *
+ * @param {string} action - 실패한 SDK 작업 이름입니다.
+ * @param {number} timeoutMs - 적용된 제한 시간입니다.
+ * @returns {Error} 사용자에게 보여줄 수 있는 timeout 오류입니다.
+ */
+function createTimeoutError(action, timeoutMs) {
+  return new Error(
+    `GitHub Copilot SDK ${action} timed out after ${timeoutMs}ms.`,
+  );
+}
+
+/**
+ * Promise 기반 Copilot SDK 작업에 제한 시간을 적용합니다.
+ * SDK가 AbortSignal을 직접 받지 않는 호출도 있으므로 Promise.race로 호출자 관점의 대기 시간을 제한합니다.
+ *
+ * @template T
+ * @param {Promise<T>} promise - 제한 시간을 적용할 SDK 작업입니다.
+ * @param {object} options - timeout 옵션입니다.
+ * @param {string} options.action - 오류 메시지에 사용할 작업 이름입니다.
+ * @param {number} options.timeoutMs - 제한 시간입니다.
+ * @returns {Promise<T>} SDK 작업 결과입니다.
+ */
+async function withCopilotTimeout(promise, { action, timeoutMs }) {
+  let timeout;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        // timeout 핸들을 저장해 정상 완료 시 즉시 해제합니다.
+        timeout = setTimeout(
+          () => reject(createTimeoutError(action, timeoutMs)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    // SDK 작업이 제한 시간 안에 끝난 경우 불필요한 timer가 이벤트 루프를 붙잡지 않게 제거합니다.
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+/**
+ * SDK 정리 작업을 안전하게 실행합니다.
+ * 정리 작업 실패는 원래 성공한 요청을 실패로 바꾸지 않도록 삼키되, timeout으로 CLI가 멈추는 상황은 막습니다.
+ *
+ * @param {Function|undefined} cleanup - session.disconnect 또는 client.stop 같은 정리 함수입니다.
+ * @param {string} action - timeout 메시지에 사용할 정리 작업 이름입니다.
+ * @returns {Promise<void>}
+ */
+async function runCleanupWithTimeout(cleanup, action) {
+  // SDK 버전에 따라 정리 함수가 없을 수 있으므로 함수일 때만 실행합니다.
+  if (typeof cleanup !== "function") {
+    return;
+  }
+
+  try {
+    // 정리 함수 내부에서 this를 사용하지 않도록 호출자는 이미 bind한 함수를 넘겨야 합니다.
+    await withCopilotTimeout(Promise.resolve().then(cleanup), {
+      action,
+      timeoutMs: CLEANUP_TIMEOUT_MS,
+    });
+  } catch {
+    // 정리 실패 원문에는 SDK 내부 상태나 로컬 경로가 들어갈 수 있으므로 여기서 출력하지 않습니다.
+    // client.stop/session.disconnect는 best-effort cleanup이며, 사용자-facing 오류는 본 요청 단계에서 처리합니다.
   }
 }
 
@@ -192,19 +292,30 @@ export async function generateCommitMessage({
 
   // Copilot Client 인스턴스를 생성합니다.
   const client = await createCopilotClient({ oauthAccessToken, sdkModule });
+  // 모든 Copilot SDK 네트워크/프로세스 호출에 동일한 timeout을 적용합니다.
+  const timeoutMs = resolveTimeoutMs(config);
 
   try {
     // session을 생성합니다.
-    const session = await client.createSession({
-      model: config.modelVersion || DEFAULT_COPILOT_MODEL,
-      hooks: buildToolDenyHooks(),
-      // permission handler는 SDK에서 필수입니다. commit message 생성에는 도구 실행이 필요 없으므로 모든 권한 요청을 거부합니다.
-      onPermissionRequest: async () => ({ kind: "denied-by-rules" }),
-    });
+    const session = await withCopilotTimeout(
+      client.createSession({
+        model: config.modelVersion || DEFAULT_COPILOT_MODEL,
+        hooks: buildToolDenyHooks(),
+        // permission handler는 SDK에서 필수입니다. commit message 생성에는 도구 실행이 필요 없으므로 모든 권한 요청을 거부합니다.
+        onPermissionRequest: async () => ({ kind: "denied-by-rules" }),
+      }),
+      {
+        action: "session creation",
+        timeoutMs,
+      },
+    );
 
     try {
       // SDK가 응답할 때까지 기다립니다.
-      const response = await session.sendAndWait({ prompt });
+      const response = await withCopilotTimeout(session.sendAndWait({ prompt }), {
+        action: "commit message generation",
+        timeoutMs,
+      });
       // SDK 응답에서 commit message를 추출합니다.
       const message = extractMessageContent(response).trim();
 
@@ -218,15 +329,14 @@ export async function generateCommitMessage({
       return message;
     } finally {
       // session도 명시적으로 끊어 SDK가 보유한 이벤트 핸들러와 내부 상태가 CLI 종료를 막지 않게 합니다.
-      if (typeof session.disconnect === "function") {
-        await session.disconnect();
-      }
+      await runCleanupWithTimeout(
+        session.disconnect?.bind(session),
+        "session cleanup",
+      );
     }
   } finally {
     // SDK client lifecycle을 명확히 종료해 CLI 프로세스가 Copilot CLI server child process를 붙잡지 않게 합니다.
-    if (typeof client.stop === "function") {
-      await client.stop();
-    }
+    await runCleanupWithTimeout(client.stop?.bind(client), "client cleanup");
   }
 }
 
@@ -252,6 +362,8 @@ export async function listModels(
   }
   // Copilot Client 인스턴스를 생성합니다.
   const client = await createCopilotClient({ oauthAccessToken, sdkModule });
+  // 모델 목록 조회도 외부 SDK 호출이므로 commit message 생성과 같은 timeout 정책을 적용합니다.
+  const timeoutMs = resolveTimeoutMs(config);
 
   // client를 사용하여 모델 목록을 조회합니다.
   try {
@@ -261,11 +373,14 @@ export async function listModels(
     }
 
     // 정규화 된 모델 목록을 반환합니다.
-    return normalizeModelList(await client.listModels());
+    return normalizeModelList(
+      await withCopilotTimeout(client.listModels(), {
+        action: "model list request",
+        timeoutMs,
+      }),
+    );
   } finally {
     // SDK client lifecycle을 명확히 종료해 CLI 프로세스가 Copilot CLI server child process를 붙잡지 않게 합니다.
-    if (typeof client.stop === "function") {
-      await client.stop();
-    }
+    await runCleanupWithTimeout(client.stop?.bind(client), "client cleanup");
   }
 }
