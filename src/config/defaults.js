@@ -43,6 +43,9 @@ export const DEFAULT_CONFIG = {
   updateCheck: true,
   // 마지막 update check 시각입니다. null이면 아직 확인한 적이 없다는 의미입니다.
   lastUpdateCheckAt: null,
+  // GitHub Copilot SDK/OAuth 연동은 공식 SDK가 preview 상태이므로 사용자가 명시적으로 켰을 때만 동작합니다.
+  // 기본값 false는 실수로 외부 Copilot 요청이 발생하지 않게 하는 보안 gate 역할을 합니다.
+  experimentalGitHubCopilot: false,
 };
 
 // CLI 설정값 검증과 command 분기에서 재사용할 수 있는 지원 커밋 모드 목록입니다.
@@ -68,7 +71,6 @@ export const DEFAULT_LOCAL_LLM_BASE_URL = "http://localhost:11434/v1";
  */
 export const STABLE_PROVIDERS = [
   "gemini",
-  "github-copilot",
   "codex",
   "claude",
   "grok",
@@ -81,4 +83,4 @@ export const STABLE_PROVIDERS = [
 /**
  * 실험적인 Provider 목록입니다.
  */
-export const EXPERIMENTAL_PROVIDERS = ["antigravity", "manus"];
+export const EXPERIMENTAL_PROVIDERS = ["antigravity", "manus", "github-copilot"];
