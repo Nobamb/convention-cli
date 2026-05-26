@@ -4,12 +4,14 @@ import * as geminiProvider from "./gemini.js";
 import * as openaiCompatibleProvider from "./openai-compatible.js";
 import * as antigravityProvider from "./antigravity.js";
 import * as githubCopilotProvider from "./github-copilot.js";
+import * as codexMCPProvider from "./codex-mcp.js";
 import { getValidAccessToken } from "../auth/oauth.js";
 import { getOAuthProviderConfig } from "../auth/oauthProviders.js";
 
 /**
  * 지원하는 AI Provider 모듈들의 레지스트리입니다.
  * 신규로 추가된 antigravity 및 github-copilot OAuth 대응 모델을 등록합니다.
+ * codex-mcp는 OpenAI/Codex OAuth를 직접 구현하지 않고 Codex CLI MCP server와 통신하는 provider입니다.
  */
 const PROVIDER_MODULES = {
   mock: mockProvider,
@@ -18,6 +20,7 @@ const PROVIDER_MODULES = {
   openaiCompatible: openaiCompatibleProvider,
   antigravity: antigravityProvider,
   "github-copilot": githubCopilotProvider,
+  "codex-mcp": codexMCPProvider,
 };
 
 /**
