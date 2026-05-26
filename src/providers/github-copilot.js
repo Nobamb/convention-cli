@@ -367,6 +367,12 @@ export async function listModels(
 
   // client를 사용하여 모델 목록을 조회합니다.
   try {
+    // CopilotClient는 listModels 호출 시 세션처럼 autoStart를 지원하지 않으므로, 호출 전 명시적으로 start()를 실행해야 합니다.
+    await withCopilotTimeout(client.start(), {
+      action: "client connection startup",
+      timeoutMs,
+    });
+
     // client에 listModels가 없으면 기본 모델을 반환합니다.
     if (typeof client.listModels !== "function") {
       return [config.modelVersion || DEFAULT_COPILOT_MODEL];
