@@ -288,6 +288,46 @@ test('S-2 empty direct modelVersion is rejected without config mutation', async 
   }
 });
 
+test('S-5 direct codex-mcp setup stores config without credentials', async () => {
+  const { store, modelCommand, cleanup } = await importModelCommandWithTempHome();
+
+  try {
+    const nextConfig = await modelCommand.runModelSetup(
+      'codex-mcp',
+      'none',
+      'gpt-5.3-codex',
+    );
+
+    assert.equal(nextConfig.provider, 'codex-mcp');
+    assert.equal(nextConfig.authType, 'none');
+    assert.equal(nextConfig.modelVersion, 'gpt-5.3-codex');
+    assert.equal(nextConfig.modelDisplayName, 'gpt-5.3-codex');
+    assert.deepEqual(store.loadCredentials(), {});
+  } finally {
+    cleanup();
+  }
+});
+
+test('S-6 codex-mcp rejects api and oauth auth types before saving config', async () => {
+  const { store, modelCommand, cleanup } = await importModelCommandWithTempHome();
+
+  try {
+    await assert.rejects(
+      () => modelCommand.runModelSetup('codex-mcp', 'api', 'gpt-5.3-codex'),
+      /authType/,
+    );
+    await assert.rejects(
+      () => modelCommand.runModelSetup('codex-mcp', 'oauth', 'gpt-5.3-codex'),
+      /authType/,
+    );
+
+    assert.equal(store.loadConfig().provider, null);
+    assert.deepEqual(store.loadCredentials(), {});
+  } finally {
+    cleanup();
+  }
+});
+
 test('T-1 direct localLLM setup preserves existing config fields and pretty saves JSON', async () => {
   const { store, modelCommand, cleanup } = await importModelCommandWithTempHome();
 
