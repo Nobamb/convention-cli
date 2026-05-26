@@ -236,7 +236,7 @@ test("provider routing includes codex-mcp without OAuth credential lookup", asyn
     assert.equal(typeof provider.listModels, "function");
     assert.deepEqual(
       await providers.listProviderModels({ provider: "codex-mcp", authType: "none" }),
-      ["gpt-5.3-codex"],
+      ["gpt-5.3-codex", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.2"],
     );
   } finally {
     cleanup();
