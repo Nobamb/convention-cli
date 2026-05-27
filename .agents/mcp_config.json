@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "convention-cli-mcp": {
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": [
+        "C:\\Users\\USER\\Desktop\\develop\\convention-cli\\bin\\convention.js",
+        "-am"
+      ],
+      "cwd": "C:\\Users\\USER\\Desktop\\develop\\convention-cli",
+      "env": {
+        "CONVENTION_EXPERIMENTAL_ANTIGRAVITY": "true"
+      }
+    }
+  }
+}
