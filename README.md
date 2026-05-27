@@ -113,6 +113,7 @@ During `convention`, `--step`, or `--batch`, a Gemini/OpenAI-compatible HTTP 429
 ### GitHub Copilot Integration (Experimental)
 
 To use GitHub Copilot as the AI provider:
+
 1. Create a GitHub OAuth App in **Settings > Developer settings > OAuth Apps > Register a new application**.
    - **Homepage URL**: `http://localhost`
    - **Authorization callback URL**: `http://localhost/oauth/callback`
@@ -126,30 +127,70 @@ To use GitHub Copilot as the AI provider:
    ```bash
    convention -m github-copilot oauth
    ```
-    This will automatically trigger a browser-based OAuth flow using PKCE, storing the token safely under `credentials.json` namespace.
+   This will automatically trigger a browser-based OAuth flow using PKCE, storing the token safely under `credentials.json` namespace.
 
 ### Antigravity MCP Integration (Experimental)
 
 **Convention CLI** can be run as a local MCP (Model Context Protocol) Stdio server. This enables Gemini, Grok, or Google's **Antigravity** agent host to communicate with your local repository using standard JSON-RPC protocol over Stdio without exposing sensitive credentials, creating an **"Inversion of Authentication"** architecture.
 
-1. **Enable the Experimental Feature**:
-   To prevent unauthorized server startup, you must opt-in by exporting the activation environment variable in your terminal:
-   ```bash
-   export CONVENTION_EXPERIMENTAL_ANTIGRAVITY="true"
+1. **Find your local paths**:
+   - Project path: the absolute path to this repository, for example `C:\Users\USER\Desktop\develop\convention-cli`.
+   - Node path: use an absolute `node.exe` path on Windows, for example `C:\Program Files\nodejs\node.exe`. GUI apps do not always inherit the terminal `PATH`.
+
+2. **Create the Antigravity MCP config file**:
+   Antigravity reads MCP settings from `mcp_config.json`, not from arbitrary `mcp.json` or `config.json` files. Use the profile that matches your host:
+   - Antigravity Editor: `%USERPROFILE%\.gemini\antigravity\mcp_config.json`
+   - Antigravity CLI: `%USERPROFILE%\.gemini\antigravity-cli\mcp_config.json`
+   - Antigravity IDE profile, if present: `%USERPROFILE%\.gemini\antigravity-ide\mcp_config.json`
+   - Shared Gemini config, if your installed version reads it: `%USERPROFILE%\.gemini\config\mcp_config.json`
+
+   ```json
+   {
+     "mcpServers": {
+       "convention-cli-mcp": {
+         "command": "C:\\Program Files\\nodejs\\node.exe",
+         "args": [
+           "C:\\Users\\USER\\Desktop\\develop\\convention-cli\\bin\\convention.js",
+           "-am"
+         ],
+         "cwd": "C:\\Users\\USER\\Desktop\\develop\\convention-cli",
+         "env": {
+           "CONVENTION_EXPERIMENTAL_ANTIGRAVITY": "true"
+         }
+       }
+     }
+   }
    ```
 
-2. **Start the MCP Server**:
-   ```bash
-   convention -am
-   # Or using the long option
-   convention --agy-mcp
-   ```
-   This will spin up a local MCP Stdio server. 
+   Replace the example paths with your own absolute paths. `cwd` is important because the MCP server runs Git commands against the current working directory.
 
-3. **Exposed Tools**:
+3. **Save JSON as UTF-8 without BOM on Windows**:
+   Some Antigravity builds reject a UTF-8 BOM with errors such as `invalid character 'ï' looking for beginning of value`. In VS Code, use **Save with Encoding > UTF-8**. In PowerShell, prefer a no-BOM writer when generating the file.
+
+4. **Restart Antigravity**:
+   Close and reopen Antigravity Editor/IDE or restart the Antigravity CLI session so it reloads `mcp_config.json`.
+
+5. **Verify the tool is available**:
+   Ask Antigravity to list or use the `convention-cli-mcp` MCP server. It should expose these tools:
    - `get_masked_git_diff`: Extract current git diff while purifying it. Sensitive files (like `.env`, `credentials.json`) are automatically excluded, and secret patterns (like `API_KEY`, `PASSWORD`) are replaced with `[REDACTED]`.
    - `build_commit_prompt`: Builds a system prompt instructing the agent to generate Conventional Commits messages based on your local preference (e.g. configured language and template rules).
    - `execute_git_commit`: Receives a commit message from the host agent and executes `git commit` via argument arrays. If `confirmBeforeCommit` is enabled, the server hijacks the physical console TTY (`CON` on Windows, `/dev/tty` on UNIX) to safely wait for your manual `Y/N` confirmation without corrupting the Stdio communication pipe.
+
+6. **Use it from Antigravity**:
+   In Antigravity, ask the agent to create a commit through the `convention-cli-mcp` tools. The intended flow is:
+   - call `get_masked_git_diff`
+   - call `build_commit_prompt` with that diff
+   - generate a Conventional Commits message
+   - call `execute_git_commit` with the final message
+
+   You normally do not run `convention -am` manually while Antigravity is connected. Antigravity starts that stdio server from `mcp_config.json`.
+
+7. **Troubleshooting**:
+   - If Antigravity says the MCP server is not connected, check the file name is exactly `mcp_config.json` and the root key is `mcpServers`.
+   - If the server starts outside the repository, add or fix `cwd`.
+   - If `node` is not found, use the absolute `node.exe` path in `command`.
+   - If JSON parsing fails, remove UTF-8 BOM and ensure the file is not empty.
+   - If commit execution fails after the tools appear, run `git status` in the repository and make sure there are committable changes that are not excluded as sensitive files.
 
 ---
 
@@ -236,11 +277,12 @@ GitHub Copilot을 AI 프로바이더로 사용하기 위한 절차는 다음과 
    - GitHub의 **[Settings > Developer settings > OAuth Apps > Register a new application](https://github.com/settings/developers)**으로 이동합니다.
    - 다음과 같이 설정하여 등록합니다:
      - **Homepage URL**: `http://localhost`
-     - **Authorization callback URL**: `http://localhost/oauth/callback` *(포트번호를 붙이지 말고 정확히 기입합니다)*
+     - **Authorization callback URL**: `http://localhost/oauth/callback` _(포트번호를 붙이지 말고 정확히 기입합니다)_
    - 생성된 **Client ID**와 **Client Secret**을 복사합니다.
 
 2. **환경 변수 지정**:
    터미널에서 복사한 키들을 환경 변수로 선언해 줍니다.
+
    ```powershell
    # Windows PowerShell 기준
    $env:CONVENTION_GITHUB_CLIENT_ID="복사한_Client_ID"
@@ -256,31 +298,70 @@ GitHub Copilot을 AI 프로바이더로 사용하기 위한 절차는 다음과 
    ```bash
    convention -m github-copilot oauth
    ```
-    명령어를 실행하면 웹 브라우저가 기동되며 깃허브 소셜 로그인이 가동됩니다. 연동이 끝나면 발급된 토큰이 `credentials.json`의 `oauth.github-copilot` 공간에 자동으로 안전하게 기록됩니다.
+   명령어를 실행하면 웹 브라우저가 기동되며 깃허브 소셜 로그인이 가동됩니다. 연동이 끝나면 발급된 토큰이 `credentials.json`의 `oauth.github-copilot` 공간에 자동으로 안전하게 기록됩니다.
 
 ### Antigravity MCP 연동 가이드 (실험적 기능)
 
 **Convention CLI**는 로컬 **Model Context Protocol (MCP)** Stdio 서버 모드를 완벽하게 지원합니다. 독점 에이전트 인프라(Grok Build, Antigravity 등)가 API Key를 직접 가로채지 않고, Stdio 파이프라인을 통해 귀하의 로컬 Git 저장소 변경 사항을 안전하게 조회하고 최종 커밋을 자율 실행할 수 있도록 하는 **"인증의 주체 반전"** 아키텍처를 가동합니다.
 
-1. **실험적 기능 활성화**:
-   로컬 서버가 외부 확인 없이 제어되는 것을 방지하기 위해 터미널 환경 변수 선언을 통해 명시적으로 활성화해야 합니다.
-   ```powershell
-   # Windows PowerShell 기준
-   $env:CONVENTION_EXPERIMENTAL_ANTIGRAVITY="true"
+1. **로컬 경로 확인**:
+   - 프로젝트 경로: 이 저장소의 절대 경로입니다. 예: `C:\Users\USER\Desktop\develop\convention-cli`
+   - Node 경로: Windows에서는 `node` 대신 `C:\Program Files\nodejs\node.exe`처럼 절대 경로를 권장합니다. GUI 앱은 터미널의 `PATH`를 그대로 상속하지 않을 수 있습니다.
+
+2. **Antigravity MCP 설정 파일 생성**:
+   Antigravity는 임의의 `mcp.json`이나 `config.json`이 아니라 `mcp_config.json`을 읽습니다. 사용하는 호스트에 맞춰 아래 위치에 파일을 만듭니다.
+   - Antigravity Editor: `%USERPROFILE%\.gemini\antigravity\mcp_config.json`
+   - Antigravity CLI: `%USERPROFILE%\.gemini\antigravity-cli\mcp_config.json`
+   - Antigravity IDE 프로필이 있는 경우: `%USERPROFILE%\.gemini\antigravity-ide\mcp_config.json`
+   - 설치 버전이 공용 Gemini 설정을 읽는 경우: `%USERPROFILE%\.gemini\config\mcp_config.json`
+
+   ```json
+   {
+     "mcpServers": {
+       "convention-cli-mcp": {
+         "command": "C:\\Program Files\\nodejs\\node.exe",
+         "args": [
+           "C:\\Users\\USER\\Desktop\\develop\\convention-cli\\bin\\convention.js",
+           "-am"
+         ],
+         "cwd": "C:\\Users\\USER\\Desktop\\develop\\convention-cli",
+         "env": {
+           "CONVENTION_EXPERIMENTAL_ANTIGRAVITY": "true"
+         }
+       }
+     }
+   }
    ```
 
-2. **로컬 MCP 서버 기동**:
-   ```bash
-   # 단축 옵션으로 서버 구동
-   convention -am
-   # 전체 옵션명으로 서버 구동
-   convention --agy-mcp
-   ```
+   예시 경로는 본인 환경의 절대 경로로 바꿔야 합니다. `cwd`는 매우 중요합니다. 이 값이 없으면 MCP 서버가 Antigravity 실행 폴더에서 떠서 Git 저장소를 찾지 못할 수 있습니다.
 
-3. **제공되는 3종의 전용 도구(Tools)**:
+3. **Windows에서는 UTF-8 BOM 없이 저장**:
+   일부 Antigravity 빌드는 UTF-8 BOM이 붙은 JSON을 `invalid character 'ï' looking for beginning of value` 오류로 거부할 수 있습니다. VS Code에서는 **Save with Encoding > UTF-8**로 저장하고, PowerShell로 생성할 때는 BOM 없는 UTF-8 writer를 사용합니다.
+
+4. **Antigravity 재시작**:
+   Antigravity Editor/IDE를 완전히 종료 후 다시 열거나, Antigravity CLI 세션을 새로 시작해야 `mcp_config.json`을 다시 읽습니다.
+
+5. **연결 확인**:
+   Antigravity에게 `convention-cli-mcp` MCP 서버의 도구 목록을 확인하거나 사용하라고 요청하거나 /mcp를 통해 mcp가 정상적으로 연결되어있는지 확인합니다. 정상 연결되면 아래 3개 도구가 보여야 합니다.
    - `get_masked_git_diff`: 현재 Git 저장소의 변경사항을 획득합니다. 이때 `.env`, `credentials.json` 등 민감정보 파일은 원천 배제되며, diff 내의 `API_KEY=`, `PASSWORD=` 와 같은 비밀 구문들은 전부 `[REDACTED]`로 정화 및 마스킹된 안전한 데이터만 호스트에 전송합니다.
    - `build_commit_prompt`: 설정된 기본 언어(`ko` 등) 및 로컬 `.convention/template.json` 규칙에 일치하도록 호스트 에이전트에게 내릴 Conventional Commits 생성 안내 프롬프트 지시어를 반환합니다.
    - `execute_git_commit`: 호스트 에이전트가 완성해 보낸 커밋 메시지를 검증하고 실제 `git commit`을 물리 집행합니다. 이때 `confirmBeforeCommit`이 활성화되어 있다면, JSON-RPC stdio 채널 패킷 훼손을 방지하기 위해 **플랫폼 전용 가상 TTY 스트림**(`Windows CON` / `Unix /dev/tty`)을 강제로 개방하여 사용자의 물리 Y/N 검증 승인을 대기합니다. 승인 거부 시 실제 커밋은 철저하게 차단됩니다.
+
+6. **Antigravity에서 사용하는 방법**:
+   Antigravity에게 `convention-cli-mcp` 도구를 사용해 커밋을 만들라고 요청합니다. 의도한 순서는 아래와 같습니다.
+   - `get_masked_git_diff` 호출
+   - 반환된 diff로 `build_commit_prompt` 호출
+   - Conventional Commits 메시지 생성
+   - 최종 메시지로 `execute_git_commit` 호출
+
+   Antigravity에 연결할 때 사용자가 직접 `convention -am`을 별도 터미널에서 실행할 필요는 없습니다. Antigravity가 `mcp_config.json` 설정을 보고 stdio 서버를 직접 실행합니다.
+
+7. **문제 해결 체크리스트**:
+   - MCP가 연결되지 않으면 파일명이 정확히 `mcp_config.json`인지, 최상위 키가 `mcpServers`인지 확인합니다.
+   - 서버는 보이지만 Git 저장소를 못 찾으면 `cwd`가 이 저장소 절대 경로인지 확인합니다.
+   - `node`를 찾지 못하면 `command`에 `node.exe` 절대 경로를 넣습니다.
+   - JSON 파싱 오류가 나면 파일이 비어 있지 않은지, UTF-8 BOM이 없는지 확인합니다.
+   - 도구는 보이는데 커밋이 실패하면 저장소에서 `git status`를 확인하고, 변경 파일이 민감 파일 제외 규칙에 걸리지 않는지 확인합니다.
 
 기본 설정 파일은 `~/.config/convention/config.json`에 저장합니다. 1차 MVP의 기본 언어는 `ko`, 기본 모드는 `step`, `confirmBeforeCommit` 값은 `true`입니다.
 
