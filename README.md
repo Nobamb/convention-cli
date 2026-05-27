@@ -126,7 +126,30 @@ To use GitHub Copilot as the AI provider:
    ```bash
    convention -m github-copilot oauth
    ```
-   This will automatically trigger a browser-based OAuth flow using PKCE, storing the token safely under `credentials.json` namespace.
+    This will automatically trigger a browser-based OAuth flow using PKCE, storing the token safely under `credentials.json` namespace.
+
+### Antigravity MCP Integration (Experimental)
+
+**Convention CLI** can be run as a local MCP (Model Context Protocol) Stdio server. This enables Gemini, Grok, or Google's **Antigravity** agent host to communicate with your local repository using standard JSON-RPC protocol over Stdio without exposing sensitive credentials, creating an **"Inversion of Authentication"** architecture.
+
+1. **Enable the Experimental Feature**:
+   To prevent unauthorized server startup, you must opt-in by exporting the activation environment variable in your terminal:
+   ```bash
+   export CONVENTION_EXPERIMENTAL_ANTIGRAVITY="true"
+   ```
+
+2. **Start the MCP Server**:
+   ```bash
+   convention -am
+   # Or using the long option
+   convention --agy-mcp
+   ```
+   This will spin up a local MCP Stdio server. 
+
+3. **Exposed Tools**:
+   - `get_masked_git_diff`: Extract current git diff while purifying it. Sensitive files (like `.env`, `credentials.json`) are automatically excluded, and secret patterns (like `API_KEY`, `PASSWORD`) are replaced with `[REDACTED]`.
+   - `build_commit_prompt`: Builds a system prompt instructing the agent to generate Conventional Commits messages based on your local preference (e.g. configured language and template rules).
+   - `execute_git_commit`: Receives a commit message from the host agent and executes `git commit` via argument arrays. If `confirmBeforeCommit` is enabled, the server hijacks the physical console TTY (`CON` on Windows, `/dev/tty` on UNIX) to safely wait for your manual `Y/N` confirmation without corrupting the Stdio communication pipe.
 
 ---
 
@@ -233,7 +256,31 @@ GitHub Copilot을 AI 프로바이더로 사용하기 위한 절차는 다음과 
    ```bash
    convention -m github-copilot oauth
    ```
-   명령어를 실행하면 웹 브라우저가 기동되며 깃허브 소셜 로그인이 가동됩니다. 연동이 끝나면 발급된 토큰이 `credentials.json`의 `oauth.github-copilot` 공간에 자동으로 안전하게 기록됩니다.
+    명령어를 실행하면 웹 브라우저가 기동되며 깃허브 소셜 로그인이 가동됩니다. 연동이 끝나면 발급된 토큰이 `credentials.json`의 `oauth.github-copilot` 공간에 자동으로 안전하게 기록됩니다.
+
+### Antigravity MCP 연동 가이드 (실험적 기능)
+
+**Convention CLI**는 로컬 **Model Context Protocol (MCP)** Stdio 서버 모드를 완벽하게 지원합니다. 독점 에이전트 인프라(Grok Build, Antigravity 등)가 API Key를 직접 가로채지 않고, Stdio 파이프라인을 통해 귀하의 로컬 Git 저장소 변경 사항을 안전하게 조회하고 최종 커밋을 자율 실행할 수 있도록 하는 **"인증의 주체 반전"** 아키텍처를 가동합니다.
+
+1. **실험적 기능 활성화**:
+   로컬 서버가 외부 확인 없이 제어되는 것을 방지하기 위해 터미널 환경 변수 선언을 통해 명시적으로 활성화해야 합니다.
+   ```powershell
+   # Windows PowerShell 기준
+   $env:CONVENTION_EXPERIMENTAL_ANTIGRAVITY="true"
+   ```
+
+2. **로컬 MCP 서버 기동**:
+   ```bash
+   # 단축 옵션으로 서버 구동
+   convention -am
+   # 전체 옵션명으로 서버 구동
+   convention --agy-mcp
+   ```
+
+3. **제공되는 3종의 전용 도구(Tools)**:
+   - `get_masked_git_diff`: 현재 Git 저장소의 변경사항을 획득합니다. 이때 `.env`, `credentials.json` 등 민감정보 파일은 원천 배제되며, diff 내의 `API_KEY=`, `PASSWORD=` 와 같은 비밀 구문들은 전부 `[REDACTED]`로 정화 및 마스킹된 안전한 데이터만 호스트에 전송합니다.
+   - `build_commit_prompt`: 설정된 기본 언어(`ko` 등) 및 로컬 `.convention/template.json` 규칙에 일치하도록 호스트 에이전트에게 내릴 Conventional Commits 생성 안내 프롬프트 지시어를 반환합니다.
+   - `execute_git_commit`: 호스트 에이전트가 완성해 보낸 커밋 메시지를 검증하고 실제 `git commit`을 물리 집행합니다. 이때 `confirmBeforeCommit`이 활성화되어 있다면, JSON-RPC stdio 채널 패킷 훼손을 방지하기 위해 **플랫폼 전용 가상 TTY 스트림**(`Windows CON` / `Unix /dev/tty`)을 강제로 개방하여 사용자의 물리 Y/N 검증 승인을 대기합니다. 승인 거부 시 실제 커밋은 철저하게 차단됩니다.
 
 기본 설정 파일은 `~/.config/convention/config.json`에 저장합니다. 1차 MVP의 기본 언어는 `ko`, 기본 모드는 `step`, `confirmBeforeCommit` 값은 `true`입니다.
 
