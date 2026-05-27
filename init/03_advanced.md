@@ -1636,3 +1636,41 @@ Commit / Regenerate / Edit manually / Cancel 중 하나를 선택할 수 있다.
 11. 전체 통합 테스트
 
 이렇게 가면 3차 고도화도 1차·2차 MVP처럼 작은 Agent 단위로 안전하게 오케스트레이션할 수 있습니다.
+
+## 14. Antigravity MCP (Model Context Protocol) 연동 및 아키텍처
+
+안티그래비티 MCP(Model Context Protocol) 연동은 외부 독점 AI 에이전트(Grok Build, Antigravity 등)가 `convention-cli`를 로컬 도구(Tool)로 삼아 안전하게 작동할 수 있도록 지원하는 고도화 설계입니다.
+
+### 1. "인증의 주체 반전 (Inversion of Authentication)" 아키텍처
+기존의 AI 툴들은 도구 측에서 사용자의 API Key나 OAuth 토큰을 입력받아 외부 AI 서버로 발송하는 구조를 취해왔습니다. 그러나 이 방식은 다음과 같은 치명적인 보안 문제를 야기합니다.
+- **토큰 탈취 위험**: 미공개 소셜 로그인 인증이나 독점 에이전트 전용 API Key가 로컬 설정 파일에 평문으로 남거나 메모리 상에서 탈취될 위험.
+- **정책 무단 우회 위험**: 외부 통신 정책이 없는 기기나 격리된 환경에서 외부 AI API로 데이터를 전송하는 행위.
+
+이를 극복하기 위해 `convention-cli`는 **"인증의 주체 반전"** 아키텍처를 도입했습니다.
+- 사용자는 본인의 기기에서 에이전트(Antigravity 등)를 구동하고, 해당 에이전트가 이미 인증 권한을 획득하고 있는 상태로 둡니다.
+- `convention-cli`는 로컬 기기 내에서만 작동하는 **로컬 MCP 서버**(`-am, --agy-mcp`)로 기동합니다.
+- 에이전트가 `convention-cli` 서버에 표준화된 JSON-RPC 프로토콜(Stdio 방식)로 접속하여, CLI가 로컬에서 안전하게 생성한 도구를 찌르는 방식으로 연동합니다.
+- 즉, **인증의 주체는 에이전트**이며, **실행의 주체는 로컬 CLI**가 됨으로써 API Key 전송 없이 보안 샌드박스를 완수합니다.
+
+### 2. 가상 TTY 스트림을 통한 Stdio 간섭 차단
+로컬 MCP 서버 모드는 `stdin`과 `stdout` 파이프를 통해 JSON-RPC 메시지를 주고받습니다. 이 상태에서 로컬 최종 승인(`confirmBeforeCommit`)을 가동하기 위해 일반적인 `prompts` 라이브러리나 `readline`을 기동하여 `stdin`을 찌르게 되면, JSON-RPC 제어 토큰들과 입출력 버퍼가 섞이게 되어 통신 프로토콜이 즉각 손상(크래시)됩니다.
+
+이 문제를 우회하고 완벽한 안전장치를 마련하기 위해 **플랫폼별 TTY 직접 연결 통신 기법**을 설계 및 구현했습니다.
+- **Windows**: `fs.createReadStream("CON")` 및 `fs.createWriteStream("CON")`을 개방하여, `stdin`/`stdout` 파이프라인과는 완전히 독립적인 키보드 물리 입력 및 콘솔 화면 출력을 연계합니다.
+- **Unix/macOS**: `fs.createReadStream("/dev/tty")` 및 `fs.createWriteStream("/dev/tty")`를 기동하여 로컬 TTY 입출력을 강제 가로챕니다.
+- 이를 통해 JSON-RPC stdio 메시지 스트림에는 어떠한 불순물도 섞이지 않는 정조를 지켜내면서도, 로컬 TTY를 통해 사용자가 Y/N 승인을 안전하게 대기하고 통제하는 이중 안전망(Human-in-the-Loop)을 구현하였습니다.
+
+### 3. 노출 도구(Tools) 규격 및 보안 게이트
+로컬 MCP 서버(`-am, --agy-mcp`)는 호스트 에이전트에게 3가지의 엄격하고 정제된 도구를 제공합니다.
+
+#### A. `get_masked_git_diff` (Git 변경사항 안전 추출)
+- 로컬 Git 변경 사항을 정제 추출하되, 사전에 정의된 민감 파일(`.env`, `credentials.json`, `*.pem`, `id_rsa` 등)을 제외 대상 리스트로 완벽하게 스크리닝합니다.
+- 추출된 diff 원문 내부를 스캔하여 `API_KEY=`, `PASSWORD=`, `TOKEN=`, `-----BEGIN PRIVATE KEY-----` 등의 핵심 민감 구문들을 정규식 기반으로 `[REDACTED]` 치환 정화(Purification)한 후에만 에이전트에게 회신합니다.
+
+#### B. `build_commit_prompt` (컨벤션 지시어 조립)
+- 사용자가 설정해 놓은 커밋 생성 언어(ko, en, jp, cn 등)와 로컬 프로젝트 루트 `.convention/template.json` 에 맞춰진 Conventional Commits 상세 명세를 조립하여 최적의 커밋 가이드 프롬프트를 에이전트에게 전달합니다.
+
+#### C. `execute_git_commit` (커밋 최종 물리 집행)
+- 에이전트가 Conventional Commits 명세대로 작성하여 제출한 커밋 메시지 본문을 수신합니다.
+- `execFileSync` 또는 `spawnSync` 기반의 **인자 배열 안전 구동 방식**으로 커밋 명령을 빌드합니다. (Shell 주입 취약점 완벽 방지)
+- `confirmBeforeCommit`이 켜진 상태라면 가상 TTY 스트림을 활성화하여 사용자의 Y/N 물리 입력을 수신 대기하고, 거절 시 커밋을 즉시 기각(Abort) 처리합니다.
