@@ -84,6 +84,11 @@ program.option(
   "커밋 템플릿을 관리합니다. action: init, show, validate",
 );
 
+program.option(
+  "-am, --agy-mcp",
+  "로컬 MCP(Model Context Protocol) 서버 모드로 기동합니다. Antigravity MCP 연동에 사용됩니다.",
+);
+
 program.parse(process.argv);
 
 // 옵션 가져오기
@@ -112,7 +117,8 @@ async function main() {
     options.batch !== undefined ||
     options.group !== undefined ||
     options.reset !== undefined ||
-    options.push !== undefined;
+    options.push !== undefined ||
+    options.agyMcp !== undefined;
 
   // 1. 설정 옵션과 실행 옵션 혼합 사용 시 에러 발생
   if (hasConfigOption && hasExecutionOption) {
@@ -131,6 +137,12 @@ async function main() {
   if (options.reset && (options.step || options.batch || options.group || options.push)) {
     throw new Error(
       "상호 배타적인 옵션 조합입니다: --reset은 커밋 생성 옵션(--step, --batch, --group, --push)과 함께 사용할 수 없습니다."
+    );
+  }
+
+  if (options.agyMcp && (options.step || options.batch || options.group || options.push || options.reset || options.template || options.question || options.setMode || options.language)) {
+    throw new Error(
+      "상호 배타적인 옵션 조합입니다: -am, --agy-mcp 서버 모드는 다른 커밋 생성 및 설정 옵션과 함께 사용할 수 없습니다."
     );
   }
 
@@ -180,6 +192,19 @@ async function main() {
   }
 
   // 4. 실행 로직 처리
+  // -am, --agy-mcp 옵션은 로컬 MCP 서버로 구동되어 JSON-RPC stdio를 통해 Antigravity와 통신하는 독립 실행 모드입니다.
+  if (options.agyMcp) {
+    if (process.env.CONVENTION_EXPERIMENTAL_ANTIGRAVITY !== "true") {
+      throw new Error(
+        "Antigravity MCP 서버 연동은 실험적 기능입니다. 기동하려면 CONVENTION_EXPERIMENTAL_ANTIGRAVITY=true 환경 변수를 선언해야 합니다."
+      );
+    }
+    // 동적으로 mcp.js 명령 모듈을 로드하여 기동
+    const { runMCPServer } = await import("../src/commands/mcp.js");
+    await runMCPServer();
+    return;
+  }
+
   // --reset은 커밋 취소 작업이므로, commit/push 흐름과 완전히 분리되어 먼저 처리됩니다.
   if (options.reset) {
     await runReset();
