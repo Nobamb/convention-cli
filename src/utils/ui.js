@@ -815,6 +815,187 @@ export const GROUPING_DECISIONS = Object.freeze({
   CANCEL: "cancel",
 });
 
+// PR preview 이후 사용자가 선택할 수 있는 안정적인 decision 값입니다.
+// 화면 문구와 command 분기 값을 분리해 테스트와 다국어 UI 변경에도 흐름이 유지되게 합니다.
+export const PR_PREVIEW_DECISIONS = Object.freeze({
+  CREATE: "create",
+  EDIT: "edit",
+  PRINT: "print",
+  CANCEL: "cancel",
+});
+
+/**
+ * 생성된 PR 제목과 본문을 안전하게 출력합니다.
+ *
+ * raw diff는 이 함수의 입력으로 받지 않으며, logger의 redaction을 거쳐 secret-like 값이
+ * 화면에 그대로 노출되지 않게 합니다.
+ *
+ * @param {object} options
+ * @param {string} options.title - PR 제목
+ * @param {string} options.body - PR 본문
+ * @param {string} [options.base] - target branch
+ * @param {string} [options.head] - head branch
+ * @param {string[]} [options.changedFiles] - 변경 파일 metadata
+ */
+export function printPrPreview({
+  title,
+  body,
+  base,
+  head,
+  changedFiles = [],
+} = {}) {
+  // 제목이 문자열이 아니거나 빈 문자열이면 에러 발생
+  const displayTitle =
+    typeof title === "string" && title.trim().length > 0
+      ? title.trim()
+      : "(empty PR title)";
+  // 본문이 문자열이 아니거나 빈 문자열이면 에러 발생
+  const displayBody =
+    typeof body === "string" && body.trim().length > 0
+      ? body.trim()
+      : "(empty PR body)";
+  // 변경 파일 목록이 배열이 아니거나 빈 배열이면 빈 배열 반환
+  const safeFiles = Array.isArray(changedFiles)
+    ? changedFiles.filter(
+        (file) => typeof file === "string" && file.trim().length > 0,
+      )
+    : [];
+
+  // PR preview 출력
+  info("PR preview");
+  // base, head값이 존재하면 지정된 브랜치 정보 출력
+  // 그 외에는 base, head 기본 값 적용
+  if (base || head) {
+    info(`Branch: ${head || "current"} -> ${base || "base"}`);
+  }
+  // PR 제목 출력
+  info(`PR Title: ${displayTitle}`);
+  // PR 본문 출력
+  info("PR Body:");
+  info(displayBody);
+  // 변경 파일 목록이 존재하면 변경 파일 목록 출력
+  if (safeFiles.length > 0) {
+    info("Changed files:");
+    // 변경 파일 목록을 순회하며 출력
+    for (const file of safeFiles) {
+      info(`- ${file}`);
+    }
+  }
+}
+
+/**
+ * PR preview 이후 사용자의 다음 동작을 선택합니다.
+ *
+ * @returns {Promise<string>} PR_PREVIEW_DECISIONS 값 중 하나
+ */
+export async function selectPrPreviewAction() {
+  try {
+    // PR preview 이후 사용자의 다음 동작 선택
+    const response = await prompts(
+      {
+        // select 타입
+        type: "select",
+        // 선택값
+        name: "decision",
+        // 메시지
+        message: "How would you like to proceed?",
+        choices: [
+          { title: "Create PR", value: PR_PREVIEW_DECISIONS.CREATE },
+          { title: "Edit manually", value: PR_PREVIEW_DECISIONS.EDIT },
+          { title: "Print only", value: PR_PREVIEW_DECISIONS.PRINT },
+          { title: "Cancel", value: PR_PREVIEW_DECISIONS.CANCEL },
+        ],
+        // 기본 선택값
+        initial: 0,
+      },
+      {
+        // preview 선택이 취소되면 원격 작업을 하지 않는 cancel로 처리합니다.
+        onCancel: () => false,
+      },
+    );
+
+    // 반환값이 PR_PREVIEW_DECISIONS에 포함된 값이면 반환, 아니면 cancel 반환
+    return Object.values(PR_PREVIEW_DECISIONS).includes(response?.decision)
+      ? response.decision
+      : PR_PREVIEW_DECISIONS.CANCEL;
+  } catch {
+    // prompt 선택 중 오류 발생 시 cancel 반환
+    return PR_PREVIEW_DECISIONS.CANCEL;
+  }
+}
+
+/**
+ * PR 제목과 본문을 수동으로 수정합니다.
+ *
+ * title은 GitHub PR 제목으로 쓰이므로 한 줄이어야 합니다. body는 기존 markdown을 기본값으로 보여주고
+ * 사용자가 필요하면 직접 교체할 수 있게 하며, 실제 secret scan과 섹션 검증은 command/core 계층에서 다시 수행합니다.
+ *
+ * @param {object} options
+ * @param {string} options.title - 기존 제목
+ * @param {string} options.body - 기존 본문
+ * @returns {Promise<{title: string, body: string} | null>} 수정된 값 또는 취소
+ */
+export async function editPrManually({ title = "", body = "" } = {}) {
+  try {
+    // 기존 제목과 본문을 기본값으로 제공
+    const response = await prompts(
+      [
+        // 제목 입력
+        {
+          type: "text",
+          name: "title",
+          message: "Edit PR title",
+          initial: typeof title === "string" ? title : "",
+        },
+        // 본문 입력
+        {
+          type: "text",
+          name: "body",
+          message: "Edit PR body",
+          initial: typeof body === "string" ? body : "",
+        },
+      ],
+      // 수정 취소 시 false 반환
+      {
+        onCancel: () => false,
+      },
+    );
+
+    // 반환값이 문자열이 아니거나 빈 문자열이면 null 반환
+    if (
+      typeof response?.title !== "string" ||
+      typeof response?.body !== "string"
+    ) {
+      return null;
+    }
+
+    // 제목과 본문의 앞뒤 공백 제거
+    const editedTitle = response.title.trim();
+    const editedBody = response.body.trim();
+
+    // 제목과 본문 중 하나라도 비어 있으면 경고 표시 후 null 반환
+    if (!editedTitle || !editedBody) {
+      warn("PR title/body edit was empty. PR creation canceled.");
+      return null;
+    }
+
+    // 제목에 줄바꿈 문자가 포함되어 있으면 경고 표시 후 null 반환
+    if (/\r|\n/u.test(editedTitle)) {
+      warn("PR title must be one line. PR creation canceled.");
+      return null;
+    }
+
+    // 공백을 제거한 제목, 본문을 객체 형태로 반환
+    return {
+      title: editedTitle,
+      body: editedBody,
+    };
+    // 에러 발생 시 null 반환
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 안전하게 파일명 가져오기
  * @param {*} file - 파일
