@@ -15,6 +15,7 @@ import {
   setQuestion,
 } from "../src/commands/config.js";
 import { runModelSetup } from "../src/commands/model.js";
+import { runPrCommand } from "../src/commands/pr.js";
 import { runReset } from "../src/commands/reset.js";
 import { runTemplateCommand } from "../src/commands/template.js";
 import { error as logError } from "../src/utils/logger.js";
@@ -35,6 +36,7 @@ program
   )
   .version("1.0.0");
 
+// 프로그램 관련 설명
 program.addHelpText(
   "before",
   `
@@ -50,7 +52,10 @@ program
   .option("--step", "변경된 파일들을 하나씩 확인하며 커밋을 진행합니다.")
   .option("--batch", "모든 변경사항을 하나의 통합 커밋으로 생성합니다.")
   // 파일 유형과 변경 의도를 기준으로 그룹별 커밋을 진행합니다.
-  .option("--group", "변경 파일을 의도와 파일 유형 기준으로 그룹화한 뒤 그룹별 커밋을 진행합니다.")
+  .option(
+    "--group",
+    "변경 파일을 의도와 파일 유형 기준으로 그룹화한 뒤 그룹별 커밋을 진행합니다.",
+  )
   .option(
     "--set-mode <mode>",
     "기본 실행 모드를 설정합니다. 사용 가능 값: step, batch",
@@ -77,6 +82,41 @@ program.option(
 program.option(
   "--reset",
   "최근 커밋 1개를 취소하고 변경사항은 working tree에 남깁니다.",
+);
+
+program.option(
+  "--pr",
+  "현재 브랜치와 변경사항을 기반으로 PR 제목/본문을 생성하고 필요 시 GitHub PR을 생성합니다.",
+);
+
+program.option(
+  "--base <branch>",
+  "PR target branch를 지정합니다. --pr와 함께 사용합니다.",
+);
+
+program.option(
+  "--head <branch>",
+  "PR head branch를 지정합니다. 기본값은 현재 branch입니다. --pr와 함께 사용합니다.",
+);
+
+program.option(
+  "--remote <name>",
+  "GitHub remote 감지 시 우선 사용할 remote 이름을 지정합니다. 기본값은 origin입니다.",
+);
+
+program.option(
+  "--print-only",
+  "PR 제목/본문만 출력하고 원격 PR 생성은 하지 않습니다. --pr와 함께 사용합니다.",
+);
+
+program.option(
+  "--yes",
+  "PR preview 확인을 생략하고 보안 검증 통과 시 PR 생성을 진행합니다. --pr와 함께 사용합니다.",
+);
+
+program.option(
+  "--draft",
+  "GitHub PR을 draft로 생성합니다. --pr와 함께 사용합니다.",
 );
 
 program.option(
@@ -117,32 +157,77 @@ async function main() {
     options.batch !== undefined ||
     options.group !== undefined ||
     options.reset !== undefined ||
+    options.pr !== undefined ||
     options.push !== undefined ||
     options.agyMcp !== undefined;
+  // --pr에만 의미가 있는 보조 옵션 목록입니다.
+  const hasPrModifier =
+    options.base !== undefined ||
+    options.head !== undefined ||
+    options.remote !== undefined ||
+    options.printOnly !== undefined ||
+    options.yes !== undefined ||
+    options.draft !== undefined;
 
   // 1. 설정 옵션과 실행 옵션 혼합 사용 시 에러 발생
   if (hasConfigOption && hasExecutionOption) {
     throw new Error(
-      "설정 옵션(--set-mode, --language, --question, --model)과 커밋 실행 옵션(--step, --batch, --group, --reset, --push)은 함께 사용할 수 없습니다. 의도를 명확히 하여 한 종류의 명령어만 입력해 주세요."
+      "설정 옵션(--set-mode, --language, --question, --model)과 커밋 실행 옵션(--step, --batch, --group, --reset, --push)은 함께 사용할 수 없습니다. 의도를 명확히 하여 한 종류의 명령어만 입력해 주세요.",
     );
   }
 
   // 2. 상호 배타적 실행 옵션 중복 입력 시 에러 발생
   if ([options.step, options.batch, options.group].filter(Boolean).length > 1) {
     throw new Error(
-      "상호 배타적인 옵션 조합입니다: --step, --batch, --group은 함께 사용할 수 없습니다."
+      "상호 배타적인 옵션 조합입니다: --step, --batch, --group은 함께 사용할 수 없습니다.",
     );
   }
 
-  if (options.reset && (options.step || options.batch || options.group || options.push)) {
+  // --reset 옵션과 커밋 생성 옵션(--step, --batch, --group, --push) 동시 사용 시 에러
+  if (
+    options.reset &&
+    (options.step || options.batch || options.group || options.push)
+  ) {
     throw new Error(
-      "상호 배타적인 옵션 조합입니다: --reset은 커밋 생성 옵션(--step, --batch, --group, --push)과 함께 사용할 수 없습니다."
+      "상호 배타적인 옵션 조합입니다: --reset은 커밋 생성 옵션(--step, --batch, --group, --push)과 함께 사용할 수 없습니다.",
     );
   }
 
-  if (options.agyMcp && (options.step || options.batch || options.group || options.push || options.reset || options.template || options.question || options.setMode || options.language)) {
+  // --pr 옵션과 커밋 생성 옵션(--step, --batch, --group, --push, --reset) 동시 사용 시 에러
+  if (
+    options.pr &&
+    (options.step ||
+      options.batch ||
+      options.group ||
+      options.push ||
+      options.reset)
+  ) {
     throw new Error(
-      "상호 배타적인 옵션 조합입니다: -am, --agy-mcp 서버 모드는 다른 커밋 생성 및 설정 옵션과 함께 사용할 수 없습니다."
+      "상호 배타적인 옵션 조합입니다: --pr은 커밋 생성 옵션(--step, --batch, --group, --push, --reset)과 함께 사용할 수 없습니다.",
+    );
+  }
+
+  if (!options.pr && hasPrModifier) {
+    throw new Error(
+      "--base, --head, --remote, --print-only, --yes, --draft 옵션은 --pr와 함께 사용해야 합니다.",
+    );
+  }
+
+  // -am/--agy-mcp 옵션과 커밋 생성 및 설정 옵션 동시 사용 시 에러
+  if (
+    options.agyMcp &&
+    (options.step ||
+      options.batch ||
+      options.group ||
+      options.push ||
+      options.reset ||
+      options.template ||
+      options.question ||
+      options.setMode ||
+      options.language)
+  ) {
+    throw new Error(
+      "상호 배타적인 옵션 조합입니다: -am, --agy-mcp 서버 모드는 다른 커밋 생성 및 설정 옵션과 함께 사용할 수 없습니다.",
     );
   }
 
@@ -158,30 +243,38 @@ async function main() {
       await runModelSetup(provider, authType, modelVersion);
     }
 
+    // 만약 템플렛 옵션이 있다면
     if (options.template !== undefined) {
       // 템플릿 명령은 설정/관리 명령이므로 commit flow, diff 추출, AI 호출을 실행하지 않습니다.
       // 값 없이 들어온 --template은 commander가 true로 전달하며, 이 경우 현재 템플릿 상태를 보여줍니다.
       await runTemplateCommand(options.template);
     }
 
+    // 만약 question 옵션이 있다면
     if (options.question !== undefined) {
+      // question이 true면 대화형으로 설정
       if (options.question === true) {
         // 커밋 메시지 생성 후 커밋 여부를 물어볼지 대화형으로 설정합니다.
         await runQuestionSetup();
-      } else if (options.question === "true" || options.question === "false") {
+      }
+      // true 또는 false 문자열을 입력받으면 설정
+      else if (options.question === "true" || options.question === "false") {
         setQuestion(options.question === "true");
       } else {
+        // 그 외의 값을 입력받으면 에러
         throw new Error(
           "--question 값은 true 또는 false만 사용할 수 있습니다.",
         );
       }
     }
 
+    // 만약 set-mode 옵션이 있다면
     if (options.setMode) {
       // 기본 실행 모드(step, batch)를 설정합니다.
       setMode(options.setMode);
     }
 
+    // 만약 language 옵션이 있다면
     if (options.language) {
       // 커밋 메시지 생성 언어(ko, en, jp, cn)를 설정합니다.
       setLanguage(options.language);
@@ -196,7 +289,7 @@ async function main() {
   if (options.agyMcp) {
     if (process.env.CONVENTION_EXPERIMENTAL_ANTIGRAVITY !== "true") {
       throw new Error(
-        "Antigravity MCP 서버 연동은 실험적 기능입니다. 기동하려면 CONVENTION_EXPERIMENTAL_ANTIGRAVITY=true 환경 변수를 선언해야 합니다."
+        "Antigravity MCP 서버 연동은 실험적 기능입니다. 기동하려면 CONVENTION_EXPERIMENTAL_ANTIGRAVITY=true 환경 변수를 선언해야 합니다.",
       );
     }
     // 동적으로 mcp.js 명령 모듈을 로드하여 기동
@@ -208,6 +301,20 @@ async function main() {
   // --reset은 커밋 취소 작업이므로, commit/push 흐름과 완전히 분리되어 먼저 처리됩니다.
   if (options.reset) {
     await runReset();
+    return;
+  }
+
+  // --pr은 커밋/푸시/리셋과 독립된 PR 자동화 흐름입니다.
+  // preview 또는 --yes 정책 전에는 원격 PR 생성을 수행하지 않습니다.
+  if (options.pr) {
+    await runPrCommand({
+      base: options.base,
+      head: options.head,
+      remote: options.remote,
+      printOnly: options.printOnly,
+      yes: options.yes,
+      draft: options.draft,
+    });
     return;
   }
 
