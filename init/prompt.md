@@ -454,6 +454,8 @@ test-A.md라는 파일을 한국어로 적어줘
 
 35-1. AI 단계는 PR Preview Agent이므로 @work_process/advanced/AI/research-AI.md와 @work_process/advanced/AI/test-AI.md를 기반으로 생성된 PR 제목과 본문을 보여주고 Create PR, Edit manually, Print only, Cancel 선택지를 제공해줘. Create PR은 사용자 확인 또는 --yes 정책이 있을 때만 실행되도록 해줘.
 
+35-2. 이번에는 convention --reset을 했을 때 HEAD~1로만 고정해서 리셋을 하게 되서 step을 했을 때 여러 파일들을 커밋한 상태에서 전부 커밋 전으로 되돌리려면 그 파일들의 수만큼 리셋을 해야 되잖아 이걸 좀 바꿔보고 싶거든 HEAD~N(마지막으로 convention 실행했을 때 커밋된 파일 N개)의 형태로 말이야 마지막으로 convention을 통해 커밋한 파일들만 로컬 파일 내에 따로 기존에 내용들을 지우고 해당 파일들을 넣어서 나중에 --reset을 하면 해당 파일들의 수에 맞춰서 리셋을 시키게 할 지 아니면 마지막 커밋을 기점으로 시간대가 겹치는 파일들의 숫자에 맞춰 reset을 시키게 할 지 고민이야 너는 어떻게 생각해? 더 좋은 방법이 있는지 알려주고, 너의 의견을 가지고 proposal/proposal1.md에 정리해 거기서 내가 확인해서 어떻게 해야될 지 판단해볼게
+
 ### Phase 7. npm 업데이트 알림
 
 36. gpt-5.5 medium 모델 agent 1개를 AJ 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/03_advanced.md 의 AJ 단계 참고해서 AJ단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/advanced/AJ 폴더를 만들고 그 안에 test-AJ.md로 정리해줘. 그리고 Package Version 구현 계획을 @work_process/advanced/AJ/research-AJ.md 파일로 정리해줘.
