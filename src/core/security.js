@@ -19,8 +19,8 @@ const SECRET_VALUE_PATTERNS = [
 /**
  * 줄 끝 문자열 분리
  *
- * @param {*} line
- * @returns
+ * @param {string} line - 분리할 문자열
+ * @returns {{ body: string, ending: string }} - 줄 끝 문자열 분리
  */
 
 function splitLineEnding(line) {
@@ -41,12 +41,20 @@ function splitLineEnding(line) {
 
 /**
  * diff 앞부분의 접두사 추출
- * @param {*} line
- * @returns
+ * @param {string} line - diff 문자열 라인
+ * @returns {string} - 접두사
  */
 
 function getDiffLinePrefix(line) {
   //만약에 라인의 앞부분이 +,-,공백이고 뒷부분이 +,-,공백이 아니면
+  // 예시:
+  //  : 일반 텍스트(헤더 등) — 접두사 없음
+  //  + : 추가된 줄 — 접두사
+  //  - : 삭제된 줄 — 접두사
+  //  ++: 두 글자(예: @@) — 접두사 없음
+  //  +-: 두 글자(예: -) — 접두사 없음
+  // diff 앞부분의 접두사 추출 후 반환
+
   if (/^[+\- ](?![+\- ]{2})/u.test(line)) {
     return line[0];
   }
@@ -57,8 +65,8 @@ function getDiffLinePrefix(line) {
 
 /**
  * diff 앞부분의 접두사를 제외한 나머지 문자열 마스킹
- * @param {*} line
- * @returns
+ * @param {string} line - diff 문자열 라인
+ * @returns {string} - 접두사와 마스킹된 문자열을 합친 문자열 반환
  */
 function redactPrivateKeyLine(line) {
   // 접두사 추출
@@ -70,8 +78,8 @@ function redactPrivateKeyLine(line) {
 /**
  * 시크릿 문자열 마스킹
  *
- * @param {*} line
- * @returns
+ * @param {string} line - diff 문자열 라인
+ * @returns {string} - 시크릿 문자열 패턴을 마스킹한 문자열 반환
  */
 function maskSecretValues(line) {
   // line을 받아서 masked하도록 지정
@@ -89,18 +97,19 @@ function maskSecretValues(line) {
  * 알려진 시크릿 마커에 대해 Git diff 본문을 검사하고 마스킹된 diff를 반환합니다.
  * 원본 값은 findings에서 반환되지 않으므로 호출자는 count만 안전하게 기록할 수 있습니다.
  *
- * @param {string} diff
- * @returns {{ diff: string, found: boolean, count: number }}
+ * @param {string} diff - diff 문자열
+ * @returns {{ diff: string, found: boolean, count: number }} - 마스킹된 diff, 시크릿 발견 여부, 시크릿 개수 반환
  */
 export function maskSensitiveDiff(diff) {
   // 문자열 타입 검사
+  // 문자열이 아니면 에러 반환
   if (typeof diff !== "string") {
     throw new TypeError("diff must be a string");
   }
 
-  // 시크릿 발견 여부
+  // 시크릿 발견 여부 초기화
   let found = false;
-  // 시크릿 개수
+  // 시크릿 개수 초기화
   let count = 0;
   // privateKeyBlock 초기화
   let insidePrivateKeyBlock = false;
