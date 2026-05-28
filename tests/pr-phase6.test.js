@@ -1,8 +1,16 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test, { afterEach, beforeEach } from 'node:test';
 import prompts from 'prompts';
 
-import { handlePrPreview } from '../src/commands/pr.js';
+import {
+  collectPrContext,
+  handlePrPreview,
+  shouldConfirmPrExternalProviderRequest,
+} from '../src/commands/pr.js';
 import {
   assertSafePrContent,
   cleanPrBody,
@@ -27,6 +35,28 @@ let originalLog;
 let originalWarn;
 let logCalls;
 let warnCalls;
+
+function runGit(repoDir, args) {
+  return execFileSync('git', args, {
+    cwd: repoDir,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+function createPrTestRepo() {
+  const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'convention-cli-pr-'));
+
+  runGit(repoDir, ['init']);
+  runGit(repoDir, ['config', 'user.email', 'test@example.com']);
+  runGit(repoDir, ['config', 'user.name', 'Convention Test']);
+  fs.writeFileSync(path.join(repoDir, 'README.md'), '# Test\n', 'utf8');
+  runGit(repoDir, ['add', 'README.md']);
+  runGit(repoDir, ['commit', '-m', 'chore: initial commit']);
+  runGit(repoDir, ['branch', '-M', 'main']);
+
+  return repoDir;
+}
 
 beforeEach(() => {
   originalLog = console.log;
@@ -72,6 +102,78 @@ test('Phase 6 AD buildPrPrompt masks secrets and omits raw diff lines', () => {
   assert.match(prompt, /API_KEY=\[REDACTED\]/);
   assert.match(prompt, /TOKEN=\[REDACTED\]/);
   assert.doesNotMatch(prompt, /secret-value|hidden|diff --git|@@ -1,2|\+const token|-const token/);
+});
+
+test('Phase 6 security gate keeps --yes separate from external AI approval policy', () => {
+  // --yes는 preview/create 확인 생략 옵션일 뿐이므로 외부 AI provider 전송 확인을 대체하면 안 됩니다.
+  // confirmExternalTransmission이 never로 명시 저장된 경우에만 PR metadata 외부 전송 확인을 생략합니다.
+  assert.equal(
+    shouldConfirmPrExternalProviderRequest({
+      provider: 'gemini',
+      confirmExternalTransmission: 'always',
+    }),
+    true,
+  );
+  assert.equal(
+    shouldConfirmPrExternalProviderRequest({
+      provider: 'gemini',
+      confirmExternalTransmission: 'never',
+    }),
+    false,
+  );
+  assert.equal(
+    shouldConfirmPrExternalProviderRequest({
+      provider: 'mock',
+      confirmExternalTransmission: 'always',
+    }),
+    false,
+  );
+  assert.equal(
+    shouldConfirmPrExternalProviderRequest({
+      provider: 'localLLM',
+      baseURL: 'http://localhost:11434/v1',
+      confirmExternalTransmission: 'always',
+    }),
+    false,
+  );
+  assert.equal(
+    shouldConfirmPrExternalProviderRequest({
+      provider: 'localLLM',
+      baseURL: 'https://llm.example.com/v1',
+      confirmExternalTransmission: 'always',
+    }),
+    true,
+  );
+});
+
+test('Phase 6 head option collects branch metadata from requested head and excludes unrelated working tree', () => {
+  const repoDir = createPrTestRepo();
+  const originalCwd = process.cwd();
+
+  try {
+    runGit(repoDir, ['checkout', '-b', 'feature/requested-head']);
+    fs.writeFileSync(path.join(repoDir, 'target.txt'), 'target branch change\n', 'utf8');
+    runGit(repoDir, ['add', 'target.txt']);
+    runGit(repoDir, ['commit', '-m', 'feat: add requested head file']);
+
+    runGit(repoDir, ['checkout', 'main']);
+    fs.writeFileSync(path.join(repoDir, 'working-only.txt'), 'working tree only\n', 'utf8');
+
+    process.chdir(repoDir);
+    const context = collectPrContext(
+      { base: 'main', head: 'feature/requested-head' },
+      { language: 'en' },
+    );
+
+    assert.equal(context.currentBranch, 'feature/requested-head');
+    assert.deepEqual(context.changedFiles, ['target.txt']);
+    assert.match(context.commitLog, /feat: add requested head file/);
+    assert.match(context.diffSummary, /target\.txt/);
+    assert.match(context.prompt, /target\.txt/);
+    assert.doesNotMatch(context.prompt, /working-only\.txt/);
+  } finally {
+    process.chdir(originalCwd);
+  }
 });
 
 test('Phase 6 AE cleanPrTitle normalizes a Conventional Commits title', () => {
@@ -300,6 +402,41 @@ test('Phase 6 AI handlePrPreview reports not-created when create callback return
   });
 
   assert.deepEqual(result, { created: false, printed: false, canceled: false });
+});
+
+test('Phase 6 AI handlePrPreview validates manual edit body with PR body cleanup', async () => {
+  prompts.inject([
+    PR_PREVIEW_DECISIONS.EDIT,
+    'feat: refine PR preview',
+    'Manual body without required sections',
+    PR_PREVIEW_DECISIONS.PRINT,
+  ]);
+
+  const result = await handlePrPreview({
+    title: 'feat: add PR automation',
+    body: '## Summary\n- Add\n\n## Changes\n- PR flow\n\n## Tests\n- Not run',
+    context: {
+      baseBranch: 'main',
+      currentBranch: 'feature/pr',
+      changedFiles: ['src/core/pr.js'],
+      diffSummary: 'PR preview metadata',
+      commitLog: 'abc123 feat: add PR automation',
+    },
+    options: {},
+    create() {
+      throw new Error('create should not be called for print-only decision');
+    },
+  });
+
+  const output = logCalls.join('\n');
+
+  assert.deepEqual(result, { created: false, printed: true, canceled: false });
+  assert.match(output, /feat: refine PR preview/);
+  assert.match(output, /## Summary/);
+  assert.match(output, /PR preview metadata/);
+  assert.match(output, /## Changes/);
+  assert.match(output, /src\/core\/pr\.js/);
+  assert.match(output, /## Tests/);
 });
 
 test('Phase 6 provider generation works with mock provider without network access', async () => {

@@ -7,6 +7,7 @@ import { loadConfig } from "../config/store.js";
 import { buildPrPrompt } from "../core/prPrompt.js";
 import {
   assertSafePrContent,
+  cleanPrBody,
   cleanPrTitle,
   generatePrBody,
   generatePrTitle,
@@ -172,9 +173,9 @@ function resolveBaseBranch(requestedBase) {
  * @param {string} baseRef - Git 비교 기준 ref
  * @returns {string} commit log
  */
-function getCommitLogSinceBase(baseRef) {
+function getCommitLogSinceBase(baseRef, headRef = "HEAD") {
   try {
-    return runGit(["log", "--oneline", `${baseRef}..HEAD`]).trim();
+    return runGit(["log", "--oneline", `${baseRef}..${headRef}`]).trim();
   } catch {
     // 에러가 발생하면 빈 문자열 반환
     return "";
@@ -187,7 +188,7 @@ function getCommitLogSinceBase(baseRef) {
  * @param {string} baseRef - Git 비교 기준 ref
  * @returns {string[]} 파일 목록
  */
-function getBranchChangedFiles(baseRef) {
+function getBranchChangedFiles(baseRef, headRef = "HEAD") {
   try {
     return splitLines(
       runGit([
@@ -195,7 +196,7 @@ function getBranchChangedFiles(baseRef) {
         "core.quotepath=false",
         "diff",
         "--name-only",
-        `${baseRef}...HEAD`,
+        `${baseRef}...${headRef}`,
       ]),
     );
   } catch {
@@ -247,7 +248,12 @@ function uniqueFiles(files) {
  * @param {string[]} params.changedFiles - 변경 파일 목록
  * @returns {string} 안전한 변경 요약
  */
-function buildSafeDiffSummary({ baseRef, fileDiffs, changedFiles }) {
+function buildSafeDiffSummary({
+  baseRef,
+  headRef = "HEAD",
+  fileDiffs,
+  changedFiles,
+}) {
   // 변경 사항을 담을 빈 배열
   const lines = [];
 
@@ -258,7 +264,7 @@ function buildSafeDiffSummary({ baseRef, fileDiffs, changedFiles }) {
       "core.quotepath=false",
       "diff",
       "--stat",
-      `${baseRef}...HEAD`,
+      `${baseRef}...${headRef}`,
     ]).trim();
 
     // stat이 있으면 lines에 추가
@@ -340,21 +346,54 @@ function isExternalAIProvider(config = {}) {
 }
 
 /**
+ * PR 문서 생성을 위해 외부 AI provider 호출 전 사용자 확인이 필요한지 판단합니다.
+ *
+ * `--yes`는 PR preview와 Create PR 확인만 생략하는 옵션입니다. 외부 AI 전송은 Git metadata가
+ * provider로 나가는 별도 보안 gate이므로, 사용자가 설정에 `confirmExternalTransmission: "never"`를
+ * 명시한 경우에만 생략합니다. 이렇게 분리해야 자동화 옵션이 외부 전송 동의까지 암묵적으로 대체하지 않습니다.
+ *
+ * @param {object} config - 사용자 설정
+ * @returns {boolean} 외부 AI 전송 확인 prompt가 필요하면 true
+ */
+export function shouldConfirmPrExternalProviderRequest(config = {}) {
+  return (
+    isExternalAIProvider(config) &&
+    config.confirmExternalTransmission !== "never"
+  );
+}
+
+/**
  * PR 제목/본문 생성을 위해 Git 컨텍스트와 안전한 prompt를 준비합니다.
  *
  * @param {object} options - CLI 옵션
  * @param {object} config - 런타임 설정
  * @returns {object} PR 생성 컨텍스트
  */
-function collectPrContext(options, config) {
-  // head가 있으면 head를 사용하고, 없으면 getCurrentBranch()를 사용
-  const currentBranch = options.head || getCurrentBranch();
+export function collectPrContext(options, config) {
+  // 현재 checkout된 branch는 working tree 변경사항을 섞어도 되는지 판단하는 기준입니다.
+  // --head가 별도 branch를 가리키면 현재 working tree diff를 PR 문서에 섞지 않아야 실제 PR head와 문서가 어긋나지 않습니다.
+  const checkedOutBranch = getCurrentBranch();
+  // head가 명시되면 해당 ref를 PR head와 diff 기준으로 사용하고, 없으면 현재 checkout branch를 사용합니다.
+  const headRef =
+    typeof options.head === "string" && options.head.trim().length > 0
+      ? options.head.trim()
+      : checkedOutBranch;
+
+  // 사용자가 지정한 head ref가 존재하지 않으면 gh pr create까지 가기 전에 중단합니다.
+  // 존재하지 않는 ref를 기준으로 문서를 만들면 현재 HEAD 기준 정보가 섞이는 오류로 이어질 수 있습니다.
+  if (!gitRefExists(headRef)) {
+    throw new Error(`Head branch was not found: ${headRef}`);
+  }
+
+  const includeWorkingTree = headRef === checkedOutBranch;
+  const currentBranch = headRef;
   // base가 있으면 base를 사용하고, 없으면 resolveBaseBranch()를 사용
   const base = resolveBaseBranch(options.base);
   // base와 head 사이의 변경 파일들을 가져옴
-  const branchFiles = getBranchChangedFiles(base.gitRef);
+  const branchFiles = getBranchChangedFiles(base.gitRef, headRef);
   // workingTree의 변경 파일들을 가져옴
-  const workingTreeFiles = getChangedFiles();
+  // --head가 현재 checkout branch와 다르면 현재 작업트리 변경사항은 지정된 PR head와 무관할 수 있으므로 제외합니다.
+  const workingTreeFiles = includeWorkingTree ? getChangedFiles() : [];
   // branchFiles와 workingTreeFiles를 합치고 중복을 제거한 파일 목록을 가져옴
   const changedFiles = uniqueFiles([...branchFiles, ...workingTreeFiles]);
 
@@ -366,10 +405,11 @@ function collectPrContext(options, config) {
   // workingTreeFiles의 diff 수집
   const fileDiffs = getFileDiffs(workingTreeFiles);
   // base와 head 사이의 커밋 로그 수집
-  const commitLog = getCommitLogSinceBase(base.gitRef);
+  const commitLog = getCommitLogSinceBase(base.gitRef, headRef);
   // base와 head 사이의 변경 요약 수집
   const diffSummary = buildSafeDiffSummary({
     baseRef: base.gitRef,
+    headRef,
     fileDiffs,
     changedFiles,
   });
@@ -387,6 +427,8 @@ function collectPrContext(options, config) {
   // 수집한 컨텍스트 반환
   return {
     currentBranch,
+    headRef,
+    checkedOutBranch,
     baseBranch: base.prBase,
     baseRef: base.gitRef,
     changedFiles,
@@ -474,7 +516,13 @@ export async function handlePrPreview({
 
       // title과 body 정리
       currentTitle = cleanPrTitle(edited.title);
-      currentBody = edited.body;
+      // 수동 편집 경로에서도 AI 생성 경로와 동일하게 PR body 구조를 검증합니다.
+      // 필수 섹션이 빠졌거나 markdown code fence/raw diff가 섞인 경우 cleanPrBody가 fallback 또는 차단을 수행합니다.
+      currentBody = cleanPrBody(edited.body, {
+        summary: context?.diffSummary,
+        changedFiles: context?.changedFiles,
+        commitLog: context?.commitLog,
+      });
       // 편집 결과가 안전한지 확인
       assertSafePrContent({ title: currentTitle, body: currentBody });
       // while true 루프 계속
@@ -515,7 +563,7 @@ export async function runPrCommand(options = {}) {
   const context = collectPrContext(options, config);
 
   // 외부 ai 사용 여부 확인
-  if (isExternalAIProvider(config) && !options.yes) {
+  if (shouldConfirmPrExternalProviderRequest(config)) {
     // 외부 ai 사용 승인
     const approved = await confirmExternalProviderRequest({
       provider: config.provider,
