@@ -18,10 +18,11 @@ const GIT_COMMAND_OPTIONS = {
 /**
  * git 실행 함수
  *
- * @param {*} args - git 명령어 인자
- * @returns {string} - 표준 출력
+ * @param {*} args - git 명령어 인자 배열입니다. shell 문자열을 만들지 않고 `execFileSync("git", args)`의 두 번째 인자로 그대로 전달합니다.
+ * @returns {string} - Git 명령의 표준 출력 문자열입니다. stderr는 호출자가 사용자에게 직접 보여주지 않도록 pipe로만 받습니다.
  */
 function runGit(args) {
+  // Git 명령은 shell을 거치지 않고 argv 배열로 실행하여 인자 재해석이나 shell injection 가능성을 줄입니다.
   return execFileSync("git", args, GIT_COMMAND_OPTIONS);
 }
 
@@ -31,19 +32,11 @@ function runGit(args) {
  * @returns {string} - .git 디렉터리 경로
  */
 function getGitDir() {
-  // 절대 경로 반환
+  // `rev-parse --git-dir`는 현재 위치가 저장소 루트가 아닌 하위 디렉터리여도 실제 Git dir 위치를 알려줍니다.
   const gitDir = runGit(["rev-parse", "--git-dir"]).trim();
-  // 상대 경로인 경우 절대 경로로 변환
+  // Git이 절대 경로를 반환하면 그대로 사용하고, 상대 경로를 반환하면 현재 작업 디렉터리 기준 절대 경로로 변환합니다.
+  // 이 절대 경로는 상태 파일을 쓰기 위한 내부 경로 계산에만 쓰고, last-run.json 내용에는 저장하지 않습니다.
   return path.isAbsolute(gitDir) ? gitDir : path.resolve(process.cwd(), gitDir);
-}
-
-/**
- * git 저장소의 루트 디렉터리 경로를 반환합니다.
- * @returns {string} - 루트 디렉터리 경로
- */
-function getRepoRoot() {
-  // 절대 경로 반환
-  return runGit(["rev-parse", "--show-toplevel"]).trim();
 }
 
 /**
@@ -126,10 +119,15 @@ export function getResetStatePath() {
 export function createConventionRunTransaction(mode) {
   // 컨벤션 실행 트랜잭션 생성
   return {
+    // schemaVersion은 저장된 reset 상태 파일의 구조를 구분하기 위한 숫자입니다.
     schemaVersion: 1,
-    repoRoot: getRepoRoot(),
+    // repoRoot 같은 저장소 절대 경로는 개인정보성 로컬 경로를 포함할 수 있으므로 새 transaction에 저장하지 않습니다.
+    // reset에 필요한 경계값은 beforeHead/afterHead와 commit hash 목록뿐입니다.
+    // startedAt은 사용자가 preview에서 실행 시점을 추적할 수 있게 하는 메타데이터이며 secret이나 절대 경로를 포함하지 않습니다.
     startedAt: new Date().toISOString(),
+    // mode는 step/batch/group 중 어떤 commit flow에서 만들어진 transaction인지 보여주는 표시용 값입니다.
     mode,
+    // commits는 실제 commit이 성공한 뒤 recordResetTransactionCommit()에서 채워지는 목록입니다.
     commits: [],
   };
 }
@@ -182,9 +180,8 @@ export function normalizeLastConventionRun(transaction) {
   return {
     // 스키마 버전
     schemaVersion: 1,
-    // 리포지토리 루트
-    repoRoot:
-      typeof transaction.repoRoot === "string" ? transaction.repoRoot : "",
+    // 과거 버전 상태 파일에 repoRoot가 들어 있더라도 새로 저장할 때는 의도적으로 제외합니다.
+    // repoRoot는 사용자명이나 로컬 디렉터리 구조를 포함할 수 있고, reset 실행에는 필요하지 않습니다.
     // 시작 시간
     startedAt:
       typeof transaction.startedAt === "string" ? transaction.startedAt : "",
