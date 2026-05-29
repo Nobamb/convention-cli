@@ -1,4 +1,10 @@
-import { getCurrentHead, isGitRepository, resetToCommit } from "../core/git.js";
+import {
+  getCommitHashesBetween,
+  getCurrentHead,
+  isAncestorCommit,
+  isGitRepository,
+  resetToCommit,
+} from "../core/git.js";
 import {
   clearLastConventionRun,
   loadLastConventionRun,
@@ -44,6 +50,67 @@ function formatResetPreview(transaction) {
 }
 
 /**
+ * reset transaction이 현재 Git graph와 정확히 일치하는지 검증합니다.
+ *
+ * @param {import("../core/resetState.js").ResetTransaction} transaction - `.git/convention/last-run.json`에서 읽은 마지막 convention 실행 기록입니다.
+ * @returns {{ valid: boolean, reason: string }} - reset을 계속 진행해도 되면 `{ valid: true, reason: "" }`를 반환하고, 중단해야 하면 `{ valid: false, reason }`을 반환합니다.
+ */
+function validateResetTransactionGraph(transaction) {
+  // transaction.commits는 reset으로 되돌릴 convention commit들의 기록입니다.
+  const recordedCommits = transaction.commits;
+  // 마지막 기록 commit은 reset 직전 HEAD와 같아야 하는 afterHead 후보입니다.
+  const lastRecordedCommit = recordedCommits.at(-1);
+
+  // transaction 파일이 형식 검증은 통과했더라도 논리적으로 마지막 commit이 afterHead와 다르면 reset 범위가 불명확합니다.
+  if (lastRecordedCommit.hash !== transaction.afterHead) {
+    return {
+      valid: false,
+      reason: "기록된 마지막 commit hash와 afterHead가 일치하지 않습니다.",
+    };
+  }
+
+  // beforeHead가 afterHead의 ancestor인지 확인해 reset 대상 범위가 같은 Git 히스토리 선상에 있는지 검증합니다.
+  if (!isAncestorCommit(transaction.beforeHead, transaction.afterHead)) {
+    return {
+      valid: false,
+      reason: "beforeHead가 afterHead의 ancestor가 아닙니다.",
+    };
+  }
+
+  // Git이 실제로 계산한 beforeHead..afterHead 범위의 commit 목록을 가져옵니다.
+  const actualCommitHashes = getCommitHashesBetween(
+    transaction.beforeHead,
+    transaction.afterHead,
+  );
+  // transaction에 기록된 commit hash 목록만 추출해 Git graph 결과와 비교할 준비를 합니다.
+  const recordedCommitHashes = recordedCommits.map((commit) => commit.hash);
+
+  // commit 개수가 다르면 convention 실행 범위를 정확히 되돌린다고 보장할 수 없습니다.
+  if (actualCommitHashes.length !== recordedCommitHashes.length) {
+    return {
+      valid: false,
+      reason: "기록된 commit 개수와 실제 Git 범위 commit 개수가 일치하지 않습니다.",
+    };
+  }
+
+  // 각 commit hash가 같은 순서로 정확히 일치하는지 확인합니다.
+  const allHashesMatch = actualCommitHashes.every(
+    (hash, index) => hash === recordedCommitHashes[index],
+  );
+
+  // 순서 또는 값이 하나라도 다르면 다른 commit이 섞였거나 상태 파일이 잘못된 것으로 보고 reset을 중단합니다.
+  if (!allHashesMatch) {
+    return {
+      valid: false,
+      reason: "기록된 commit 목록과 실제 Git 범위 commit 목록이 일치하지 않습니다.",
+    };
+  }
+
+  // 모든 검증이 통과되면 reset 대상 범위가 transaction 기록과 Git graph 모두에서 일치합니다.
+  return { valid: true, reason: "" };
+}
+
+/**
  * 마지막 convention 실행 transaction 전체를 취소하는 reset command flow입니다.
  *
  * FIX-RS 개편 이후 `convention --reset`은 더 이상 `HEAD~1`로 추정 reset하지 않습니다.
@@ -82,6 +149,17 @@ export async function runReset() {
       "마지막 convention 실행 이후 다른 commit이 추가되어 자동 reset을 중단합니다.",
     );
     info("현재 HEAD와 기록된 afterHead가 일치하지 않습니다.");
+    info("필요하면 git log를 확인한 뒤 수동으로 reset하세요.");
+    return;
+  }
+
+  // 현재 HEAD가 맞더라도 상태 파일이 수동 편집되었거나 손상되었을 수 있으므로 Git graph 무결성을 추가로 검증합니다.
+  const graphValidation = validateResetTransactionGraph(transaction);
+
+  // Git graph 검증이 실패하면 사용자 confirm을 받기 전에 중단하여 잘못된 범위로 reset하지 않습니다.
+  if (!graphValidation.valid) {
+    warn("convention reset 기록의 Git graph 검증에 실패해 자동 reset을 중단합니다.");
+    info(graphValidation.reason);
     info("필요하면 git log를 확인한 뒤 수동으로 reset하세요.");
     return;
   }
