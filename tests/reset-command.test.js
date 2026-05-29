@@ -7,6 +7,7 @@ import test from 'node:test';
 import prompts from 'prompts';
 
 import { runReset } from '../src/commands/reset.js';
+import { saveLastConventionRun } from '../src/core/resetState.js';
 
 const gitAvailable = (() => {
   try {
@@ -83,8 +84,31 @@ function getStatus(repoDir) {
   return runGit(repoDir, ['-c', 'core.quotepath=false', 'status', '--porcelain']);
 }
 
+function saveConventionState(repoDir) {
+  const beforeHead = runGit(repoDir, ['rev-parse', 'HEAD~1']).trim();
+  const afterHead = runGit(repoDir, ['rev-parse', 'HEAD']).trim();
+
+  saveLastConventionRun({
+    schemaVersion: 1,
+    repoRoot: repoDir,
+    startedAt: '2026-05-28T00:00:00.000Z',
+    finishedAt: '2026-05-28T00:00:01.000Z',
+    mode: 'batch',
+    beforeHead,
+    afterHead,
+    commits: [
+      {
+        hash: afterHead,
+        message: 'chore: second commit',
+        files: ['README.md'],
+      },
+    ],
+  });
+}
+
 test('runReset does not reset when user rejects confirmation', { skip: skipWithoutGit }, async () => {
   await withRepo(async (repoDir) => {
+    saveConventionState(repoDir);
     prompts.inject([false]);
 
     await runReset();
@@ -96,6 +120,7 @@ test('runReset does not reset when user rejects confirmation', { skip: skipWitho
 
 test('runReset does not reset when confirmation prompt is canceled', { skip: skipWithoutGit }, async () => {
   await withRepo(async (repoDir) => {
+    saveConventionState(repoDir);
     prompts.inject([new Error('user canceled prompt')]);
 
     await runReset();
@@ -107,6 +132,7 @@ test('runReset does not reset when confirmation prompt is canceled', { skip: ski
 
 test('runReset treats an undefined confirmation response as rejection', { skip: skipWithoutGit }, async () => {
   await withRepo(async (repoDir) => {
+    saveConventionState(repoDir);
     prompts.inject([undefined]);
 
     await runReset();
@@ -116,14 +142,41 @@ test('runReset treats an undefined confirmation response as rejection', { skip: 
   });
 });
 
-test('runReset resets only HEAD~1 after confirmation and keeps changes in working tree', { skip: skipWithoutGit }, async () => {
+test('runReset resets the last convention transaction after confirmation and keeps changes in working tree', { skip: skipWithoutGit }, async () => {
   await withRepo(async (repoDir) => {
+    saveConventionState(repoDir);
     prompts.inject([true]);
 
     await runReset();
 
     assert.equal(getLastCommitMessage(repoDir), 'chore: initial commit');
     assert.match(getStatus(repoDir), /^ M README\.md/m);
+  });
+});
+
+test('runReset does not fall back to HEAD~1 when convention state is missing', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    prompts.inject([true]);
+
+    await runReset();
+
+    assert.equal(getLastCommitMessage(repoDir), 'chore: second commit');
+    assert.equal(getStatus(repoDir), '');
+  });
+});
+
+test('runReset refuses to reset when current HEAD differs from recorded afterHead', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    saveConventionState(repoDir);
+    writeFile(repoDir, 'manual.md', 'manual commit\n');
+    runGit(repoDir, ['add', 'manual.md']);
+    runGit(repoDir, ['commit', '-m', 'docs: manual commit']);
+    prompts.inject([true]);
+
+    await runReset();
+
+    assert.equal(getLastCommitMessage(repoDir), 'docs: manual commit');
+    assert.equal(getStatus(repoDir), '');
   });
 });
 

@@ -71,6 +71,9 @@ convention --step
 
 # Group changed files by intent and commit per group
 convention --group
+
+# Safely undo the commits generated during the last convention run and keep changes in the working tree
+convention --reset
 ```
 
 <!-- 설정 관리: 커밋 모드나 출력 언어 등 사용자 환경설정 방법을 설명합니다. -->
@@ -115,6 +118,7 @@ During `convention`, `--step`, or `--batch`, a Gemini/OpenAI-compatible HTTP 429
 **Convention CLI** provides an advanced workflow that analyzes Git changes and commit logs to **automatically generate Pull Request titles and bodies using AI**, and seamlessly communicates with the local GitHub CLI (`gh`) to **instantly create a Pull Request on the remote repository**.
 
 #### Basic Usage
+
 ```bash
 # Start the PR generation flow summarizing the changes based on the current branch (default target branch is origin's default branch)
 convention --pr
@@ -136,16 +140,17 @@ convention --pr --draft
 ```
 
 #### Detailed Modifier Options
+
 - `--base <branch>`: Specifies the target branch to merge the PR into. If not specified, it automatically finds and matches the repository's default branch such as `origin/main` or `main`.
 - `--head <branch>`: Specifies the head branch to send the PR from. If the specified branch differs from the currently checked out branch, local working tree changes are safely excluded from the PR summary to prevent discrepancies with the remote PR.
 - `--remote <name>`: Customizes the remote repository name (default: `origin`) to use when calling GitHub APIs.
 
 #### Core Safeguards & Working Principles
+
 1. **GitHub CLI (`gh`) Integration & Authentication Security**: To execute the PR creation, the `gh` CLI tool must be installed locally and pre-authenticated via `gh auth login`. Otherwise, the CLI gracefully outputs only the generated title/body document with a warning message.
 2. **External Transmission Approval Gate**: When using an external AI Provider (Gemini, OpenAI, etc.), a confirmation prompt is displayed before local Git metadata is sent to the server. You can bypass this prompt by adding `"confirmExternalTransmission": "never"` to your config file (`config.json`).
 3. **Sensitive Information Detection & Redaction**: During file extraction and diff collection, sensitive files like `.env`, `credentials.json`, and `*.pem` are strictly excluded. Furthermore, if secret tokens or credential patterns (e.g., `API_KEY=`, `PASSWORD=`) are found in the diff, they are automatically redacted with `[REDACTED]` to prevent leakages to AI models.
 4. **Preview & Manual Editing Support**: Once the title and body are generated, an interactive menu is displayed (`Create PR`, `Edit manually`, `Print only`, `Cancel`) along with a premium terminal preview. Even after editing via `Edit manually`, the edited content is passed through the `cleanPrBody` filter and `assertSafePrContent` validator to ensure structure integrity and block any raw code leakages.
-
 
 ### GitHub Copilot Integration (Experimental)
 
@@ -274,6 +279,9 @@ convention --step
 
 # 변경된 파일을 의도와 영역에 따라 지능적으로 그룹화하여 커밋
 convention --group
+
+# 마지막 convention 실행으로 생성된 커밋들을 안전하게 취소하고 변경사항을 작업 트리에 남김
+convention --reset
 ```
 
 ## 설정
@@ -422,6 +430,7 @@ GitHub Copilot을 AI 프로바이더로 사용하기 위한 절차는 다음과 
 **Convention CLI**는 Git 변경사항 및 커밋 로그를 종합 분석하여 Conventional 형식에 부합하는 **Pull Request 제목 및 본문을 AI로 자동 생성**하고, 로컬 GitHub CLI(`gh`)와 매끄럽게 통신하여 **원격 저장소에 PR을 즉시 생성**하는 고급 워크플로를 제공합니다.
 
 ### 기본 사용법
+
 ```bash
 # 현재 브랜치 기준의 변경 내용을 요약하여 PR 생성 흐름 시작 (기본 target branch는 origin의 기본 브랜치)
 convention --pr
@@ -443,13 +452,14 @@ convention --pr --draft
 ```
 
 ### 세부 보조 옵션
+
 - `--base <branch>`: PR이 병합될 target branch를 지정합니다. 지정하지 않을 경우 `origin/main` 또는 `main` 등의 저장소 기본 브랜치를 찾아 자동으로 매칭합니다.
 - `--head <branch>`: PR을 보낼 head branch를 지정합니다. 지정된 브랜치가 현재 로컬의 checkout 브랜치와 다르면, PR 정보와의 불일치를 방지하기 위해 로컬 working tree의 수정 사항을 PR 요약에서 안전하게 분리하고 제외합니다.
 - `--remote <name>`: GitHub API 호출 시 특정 원격 저장소 이름(기본값: `origin`)을 강제하도록 설정합니다.
 
 ### 핵심 안전 장치 및 동작 원칙
+
 1. **GitHub CLI (`gh`) 연동 및 권한 보호**: PR 생성 작업을 수행하려면 로컬 터미널에 `gh` CLI 도구가 설치되어 있어야 하며 `gh auth login`을 통한 사전 인증이 완료되어야 합니다. 그렇지 않은 경우에는 경고 메시지와 함께 제목/본문 문서만 출력하고 우아하게 종료됩니다.
 2. **외부 AI 전송 전 보안 승인 게이트**: Gemini 또는 OpenAI와 같은 외부 AI Provider 설정을 사용하는 경우, 로컬 Git metadata가 서버로 전송되기 전에 확인 프롬프트를 띄웁니다. 설정 파일(`config.json`)에 `"confirmExternalTransmission": "never"`를 입력하여 이를 영구 동의할 수도 있습니다.
 3. **민감 정보 탐지 및 제외**: 변경 파일 추출 및 Diff 수집 과정에서 `.env`, `credentials.json`, `*.pem` 등의 민감 파일은 원천 배제되며, diff에 `API_KEY=`, `PASSWORD=` 등 비밀 토큰 성격의 패턴이 보이면 자동으로 `[REDACTED]` 마스킹을 수행하여 AI 모델로 불필요한 정보가 노출되는 것을 철저히 차단합니다.
 4. **미리보기 및 수동 편집 지원**: PR 제목과 본문이 완성되면 터미널 화면에 예쁘게 렌더링된 미리보기를 출력하고 대화형 선택지(`Create PR`, `Edit manually`, `Print only`, `Cancel`)를 제공합니다. `Edit manually`를 선택하여 제목과 본문을 직접 편집한 뒤에도 `cleanPrBody` 필터와 `assertSafePrContent` 검증기를 통과시켜 필수 섹션 무결성 및 소스 코드 원문 섞임 차단을 동일하게 검사합니다.
-

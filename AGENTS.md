@@ -188,7 +188,8 @@ Agent들이 서로 다른 API 모양을 만들지 않도록 아래 계약을 따
   - `addFile(file): void`
   - `commit(message, files?): void`
   - `push(): void`
-  - `resetLastCommit(): void`
+  - `getCurrentHead(): string`
+  - `resetToCommit(commitHash): void`
 - `src/core/prompt.js`
   - `buildCommitPrompt({ diff, language, mode }): string`
 - `src/core/ai.js`
@@ -332,7 +333,9 @@ AI 호출 전 보안 Gate는 아래 순서를 따른다.
 `--reset` 규칙:
 
 - 반드시 사용자 confirm 이후 실행한다.
-- `git reset HEAD~1`만 허용한다.
+- 마지막 convention 실행 transaction 기록이 있고 현재 HEAD가 기록된 `afterHead`와 일치할 때만 `git reset <beforeHead>`를 허용한다.
+- transaction 기록이 없거나 현재 HEAD가 기록된 `afterHead`와 다르면 자동 reset을 중단한다.
+- `HEAD~1` fallback은 사용하지 않는다.
 - `git reset --hard`는 구현하지 않는다.
 - reset 후 변경사항은 working tree에 남는다는 점을 안내한다.
 - reset 실패 시 민감 정보가 포함된 Git stderr를 그대로 출력하지 않는다.

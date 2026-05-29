@@ -19,6 +19,7 @@ ${chalk.yellow('Options:')}
   -q, --question    커밋 메시지 생성 후 커밋 여부를 물어볼지 설정합니다. (true, false)
   -m, --model [arg] AI Provider 및 모델 설정을 저장합니다. (예: convention -m github-copilot oauth)
   --template [act]  커밋 템플릿을 관리합니다. (사용 가능 값: init, show, validate)
+  --reset           마지막 convention 실행으로 생성된 모든 커밋들을 안전하게 취소하고 작업 내역을 보존합니다.
   --pr              현재 브랜치의 변경사항을 기반으로 PR 제목/본문을 AI로 자동 생성하고 GitHub PR을 생성합니다.
   --base <branch>   PR target branch를 지정합니다. (기본값: origin 기본 브랜치, --pr 전용)
   --head <branch>   PR head branch를 지정합니다. (기본값: 현재 브랜치, --pr 전용)

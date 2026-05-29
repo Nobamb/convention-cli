@@ -28,7 +28,7 @@ test('CLI help includes reset option', () => {
   });
 
   assert.match(output, /--reset/);
-  assert.match(output, /working tree/);
+  assert.match(output, /working\s+tree/);
 });
 
 test('CLI help includes group option', () => {

@@ -13,9 +13,14 @@ import {
   getChangedFiles,
   getFileDiffs,
   isGitRepository,
+  getCurrentHead,
   push,
 } from "../core/git.js";
 import { maskSensitiveDiff } from "../core/security.js";
+import {
+  createConventionRunTransaction,
+  saveLastConventionRun,
+} from "../core/resetState.js";
 import { classifyChangedFiles, groupFilesByIntent } from "../core/grouping.js";
 import { isUsageExhaustedError } from "../providers/errors.js";
 import { error, info, success, warn } from "../utils/logger.js";
@@ -481,15 +486,87 @@ function getMaxRegenerateCount(config = {}) {
 /**
  * commit decision flow의 마지막 단계에서만 호출하는 staging/commit helper입니다.
  * prompt 생성이나 preview 단계에서는 절대 이 함수를 부르지 않아 사용자 승인 전 Git 히스토리 변경을 막습니다.
+ *
+ * @param {string} message - commit 메시지
+ * @param {Array} filesToCommit - commit할 파일 목록
+ * @returns {string} commit hash
  */
 function stageAndCommit(message, filesToCommit) {
   // batch와 step 모두 같은 helper를 쓰되, filesToCommit으로 실제 staging 대상을 제한합니다.
+  // commit할 파일 목록을 입력받아 staging 및 commit을 수행합니다.
   for (const file of filesToCommit) {
     addFile(file);
   }
 
   // core/git.js의 commit()은 argv 배열 방식으로 git commit -m을 실행하므로 shell 문자열 삽입 위험을 줄입니다.
   commit(message, filesToCommit);
+  // commit 성공 직후의 HEAD가 방금 생성된 commit hash입니다.
+  // 이 값을 transaction에 저장해야 step 모드처럼 여러 commit이 생겨도 convention이 만든 commit만 추적할 수 있습니다.
+  return getCurrentHead();
+}
+
+/**
+ * 마지막 실행 복구용 트랜잭션을 생성합니다.
+ * convention-cli 실행 전의 HEAD와 트랜잭션 정보를 기록하여, 추후 --reset 시 안전하게 복구하기 위한 기준점을 마련합니다.
+ * @param {string} mode 커밋 모드 (step, batch, group 등)
+ * @returns {object} 트랜잭션 정보
+ */
+function startResetTransaction(mode) {
+  // 트랜잭션 생성
+  const transaction = createConventionRunTransaction(mode);
+  // 실행 전 HEAD 기록
+  transaction.beforeHead = getCurrentHead();
+  // 트랜잭션 반환
+  return transaction;
+}
+
+/**
+ * convention 실행 결과를 트랜잭션에 기록합니다.
+ * 단, 실제 diff 내용이나 AI 응답 같은 민감 정보는 저장하지 않고, 복구에 필요한 최소한의 메타데이터만 남깁니다.
+ * @param {object} transaction 트랜잭션 객체
+ * @param {object} result convention 실행 결과
+ */
+function recordResetTransactionCommit(transaction, result) {
+  // 트랜잭션이 없거나 commit되지 않았으면 아무것도 하지 않습니다.
+  if (!transaction || !result?.committed || !result?.commitHash) {
+    return;
+  }
+
+  // transaction에는 reset preview와 검증에 필요한 최소 metadata만 저장합니다.
+  // diff 원문, prompt 원문, AI raw response, credentials는 절대 저장하지 않습니다.
+  // hash: convention 실행 결과로 얻은 commitHash
+  // message: convention 실행 결과로 얻은 commitMessage(문자열 형태라면 그대로, 아니면 빈 문자열)
+  // files: convention 실행 결과로 얻은 files(배열 형태라면 그대로, 아니라면 빈 배열)
+  transaction.commits.push({
+    hash: result.commitHash,
+    message: typeof result.message === "string" ? result.message : "",
+    files: Array.isArray(result.files) ? result.files : [],
+  });
+}
+
+/**
+ * convention 실행 직전과 직후의 HEAD를 기록하고 트랜잭션을 완료합니다.
+ * 이 정보는 추후 convention --reset이 실행되었을 때 되돌릴 commit 범위를 정하는 기준이 됩니다.
+ * @param {object} transaction 트랜잭션 객체
+ */
+function finalizeResetTransaction(transaction) {
+  // 트랜잭션이 없거나 commit 기록이 없으면 아무것도 하지 않습니다.
+  if (!transaction || transaction.commits.length === 0) {
+    return;
+  }
+
+  try {
+    // convention 실행 직전과 직후의 HEAD를 기록해 둡니다.
+    transaction.afterHead = getCurrentHead();
+    transaction.finishedAt = new Date().toISOString();
+    saveLastConventionRun(transaction);
+  } catch {
+    // commit 자체는 이미 성공했으므로 여기서 Git 히스토리를 되돌리거나 실패 처리하지 않습니다.
+    // 대신 reset 상태 저장 실패만 안내해 사용자가 이번 실행을 convention --reset으로 자동 복구할 수 없음을 알립니다.
+    warn(
+      "convention reset 기록을 저장하지 못했습니다. 이번 실행은 convention --reset으로 자동 취소할 수 없습니다.",
+    );
+  }
 }
 
 /**
@@ -574,8 +651,16 @@ export async function runCommitDecisionFlow({
   // 기존 1차/2차 자동화 호환 경로입니다.
   // confirmBeforeCommit이 true가 아니면 preview/decision prompt를 띄우지 않고 기존처럼 바로 commit합니다.
   if (currentConfig.confirmBeforeCommit !== true) {
-    stageAndCommit(currentMessage, filesToCommit);
-    return { committed: true, config: currentConfig };
+    // commit 트랜잭션을 기록하고, 메시지로 commit 수행
+    const commitHash = stageAndCommit(currentMessage, filesToCommit);
+    // 트랜잭션 정보를 기록하고, 결과 반환
+    return {
+      committed: true,
+      commitHash,
+      message: currentMessage,
+      files: filesToCommit,
+      config: currentConfig,
+    };
   }
 
   // confirmBeforeCommit=true일 때만 사용자 검토 loop에 들어갑니다.
@@ -615,8 +700,16 @@ export async function runCommitDecisionFlow({
 
     // Commit 선택일 때만 실제 staging과 commit을 수행합니다.
     if (decision === COMMIT_DECISIONS.COMMIT) {
-      stageAndCommit(currentMessage, filesToCommit);
-      return { committed: true, config: currentConfig };
+      // 트랜잭션을 완료하고, commit 수행
+      const commitHash = stageAndCommit(currentMessage, filesToCommit);
+      // commit hash를 반환
+      return {
+        committed: true,
+        commitHash,
+        message: currentMessage,
+        files: filesToCommit,
+        config: currentConfig,
+      };
     }
 
     // Cancel은 항상 Git 작업 없이 종료합니다.
@@ -1153,6 +1246,8 @@ export async function runStepCommit(options = {}) {
   const sessionState = {
     externalTransmissionApproved: false,
   };
+  // reset 트랜잭션 시작, step 모드
+  const resetTransaction = startResetTransaction("step");
 
   // 변경된 파일 목록 순회
   try {
@@ -1180,6 +1275,9 @@ export async function runStepCommit(options = {}) {
       // 실제 commit이 생성된 경우에만 성공 카운트를 올립니다.
       if (decisionResult.committed) {
         committedCount += 1;
+        // 트랜잭션에 커밋 정보 기록
+        recordResetTransactionCommit(resetTransaction, decisionResult);
+        // 커밋 성공 메시지 출력
         success(`${file} commit completed.`);
       }
     }
@@ -1191,10 +1289,13 @@ export async function runStepCommit(options = {}) {
       push: options.push && committedCount > 0,
     });
 
+    // 커밋 개수가 0이면 안내 메시지 출력
     if (committedCount === 0) {
       info("사용자가 승인한 커밋이 없습니다.");
     }
   } finally {
+    // 트랜잭션 완료
+    finalizeResetTransaction(resetTransaction);
     // localLLM 실패로 임시 provider/API 전환을 했다면 commit/push 예외가 발생해도
     // 작업 종료 시점에 현재 설정 유지 또는 기존 localLLM 복원 여부를 반드시 확인합니다.
     await finalizeLocalLLMFallbackConfig(sessionState);
@@ -1243,6 +1344,8 @@ export async function runBatchCommit(options = {}) {
   const sessionState = {
     externalTransmissionApproved: false,
   };
+  // reset 트랜잭션 시작, batch 모드
+  const resetTransaction = startResetTransaction("batch");
   try {
     // batch 모드에서는 여러 파일 diff를 하나의 prompt 입력으로 합칩니다.
     const batchDiff = joinDiffs(fileDiffs);
@@ -1267,10 +1370,14 @@ export async function runBatchCommit(options = {}) {
       return;
     }
 
-    // commit이 실제로 성공한 뒤에만 push 확인 및 push를 진행합니다.
+    // 트랜잭션에 커밋 정보 기록
+    recordResetTransactionCommit(resetTransaction, decisionResult);
+    // push 수행
     await pushAfterSuccessfulCommit(options);
+    // 성공 메시지 출력
     success("Batch commit completed.");
   } finally {
+    finalizeResetTransaction(resetTransaction);
     // fallback provider/API를 config.json에 임시 저장한 뒤 commit, push, 사용자 취소,
     // 전송 거부 중 어느 경로로 끝나더라도 기존 localLLM 복원 여부를 빠뜨리지 않습니다.
     await finalizeLocalLLMFallbackConfig(sessionState);
@@ -1351,6 +1458,8 @@ export async function runGroupedCommit(options = {}) {
   const sessionState = {
     externalTransmissionApproved: false,
   };
+  // reset 트랜잭션 시작, group 모드
+  const resetTransaction = startResetTransaction("group");
 
   // 그룹별 파일 커밋
   try {
@@ -1395,6 +1504,9 @@ export async function runGroupedCommit(options = {}) {
       // commit 되었다면 커밋 카운트 증가
       if (decisionResult.committed) {
         committedCount += 1;
+        // 트랜잭션에 커밋 정보 기록
+        recordResetTransactionCommit(resetTransaction, decisionResult);
+        // 그룹 커밋 성공 메시지 출력
         success(`Group ${group.groupName} commit completed.`);
       }
     }
@@ -1411,6 +1523,9 @@ export async function runGroupedCommit(options = {}) {
     // fallback provider/API를 config.json에 임시 저장한 뒤 commit, push, 사용자 취소,
     // 전송 거부 중 어느 경로로 끝나더라도 기존 localLLM 복원 여부를 빠뜨리지 않습니다.
   } finally {
+    // 트랜잭션 완료
+    finalizeResetTransaction(resetTransaction);
+    // fallback provider/API 복구
     await finalizeLocalLLMFallbackConfig(sessionState);
   }
 }

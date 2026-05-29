@@ -81,7 +81,7 @@ program.option(
 
 program.option(
   "--reset",
-  "최근 커밋 1개를 취소하고 변경사항은 working tree에 남깁니다.",
+  "마지막 convention 실행에서 생성된 commit들을 취소하고 변경사항은 working tree에 남깁니다.",
 );
 
 program.option(

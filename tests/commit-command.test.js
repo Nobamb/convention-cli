@@ -11,6 +11,7 @@ import { buildExternalAITransmissionMessage } from '../src/utils/ui.js';
 
 let commands;
 let store;
+let resetState;
 let tempHome;
 let previousHome;
 let previousUserProfile;
@@ -42,6 +43,7 @@ before(async () => {
 
   store = await import('../src/config/store.js');
   commands = await import('../src/commands/commit.js');
+  resetState = await import('../src/core/resetState.js');
 });
 
 beforeEach(() => {
@@ -191,6 +193,12 @@ test('runBatchCommit creates one commit for committable changed files', { skip: 
     assert.match(status, /^\?\? \.env/m);
     assert.equal(status.includes('README.md'), false);
     assert.equal(status.includes('docs/new-guide.md'), false);
+
+    const state = resetState.loadLastConventionRun();
+    assert.equal(state.mode, 'batch');
+    assert.equal(state.afterHead, runGit(repoDir, ['rev-parse', 'HEAD']).trim());
+    assert.equal(state.commits.length, 1);
+    assert.deepEqual(state.commits[0].files.sort(), ['README.md', 'docs/new-guide.md'].sort());
   });
 });
 
@@ -208,6 +216,15 @@ test('runStepCommit creates one commit per committable file', { skip: skipWithou
 
     assert.equal(messages.filter((message) => message === 'chore: update project files').length, 3);
     assert.equal(getStatus(repoDir), '');
+
+    const state = resetState.loadLastConventionRun();
+    assert.equal(state.mode, 'step');
+    assert.equal(state.afterHead, runGit(repoDir, ['rev-parse', 'HEAD']).trim());
+    assert.equal(state.commits.length, 3);
+    assert.deepEqual(
+      state.commits.flatMap((commit) => commit.files).sort(),
+      ['README.md', 'docs/new-step-guide.md', 'src/app.js'].sort(),
+    );
   });
 });
 

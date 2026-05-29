@@ -50,6 +50,7 @@ Part A. 범용 Agent 작업 규칙
    4-8. 외부 AI API로 diff를 전송하기 전 사용자 확인 없이 전송 금지
    4-9. 사용자 동의 없이 git commit 자동 실행 금지
    4-10. 테스트 목적으로 실제 사용자 Git 히스토리를 변경하는 코드 작성 금지
+   4-11. convention --reset은 마지막 convention 실행 transaction의 beforeHead/afterHead 검증 없이 자동 실행 금지
 
 5. 공통 보안 원칙
    5-1. 민감정보 탐지

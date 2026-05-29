@@ -12,9 +12,10 @@ import {
   getChangedFiles,
   getFileDiffs,
   getFullDiff,
+  getCurrentHead,
   isGitRepository,
   push,
-  resetLastCommit,
+  resetToCommit,
 } from '../src/core/git.js';
 
 const gitAvailable = (() => {
@@ -144,8 +145,8 @@ test('git core implementation avoids unsafe execution and logging patterns', () 
   assert.match(source, /\[["']add["'], ["']--["'], file\]/);
   assert.match(source, /\[["']commit["'], ["']-m["'], message\]/);
   assert.match(source, /\[["']push["']\]/);
-  assert.match(source, /\[["']reset["'], ["']HEAD~1["']\]/);
-  assert.equal(source.includes(['--', 'hard'].join('')), false);
+  assert.match(source, /\[["']reset["'], commitHash\]/);
+  assert.doesNotMatch(source, /\[["']reset["'], ["']--hard["']\]/);
   assert.match(source, /encoding: ["']utf8["']/);
 });
 
@@ -518,17 +519,29 @@ test('push uses safe error output when no remote is configured', { skip: skipWit
   });
 });
 
-test('resetLastCommit uses mixed reset and keeps reverted commit changes in working tree', { skip: skipWithoutGit }, async () => {
+test('resetToCommit resets to a validated full hash and keeps changes in working tree', { skip: skipWithoutGit }, async () => {
   await withRepo((repoDir) => {
-    writeFile(repoDir, 'README.md', 'second commit change\n');
+    const beforeHead = getCurrentHead();
+    writeFile(repoDir, 'README.md', 'transaction commit change\n');
     addFile('README.md');
-    commit('chore: second commit');
+    commit('chore: transaction commit');
+    const afterHead = getCurrentHead();
 
-    assert.equal(getLastCommitMessage(repoDir), 'chore: second commit');
+    assert.match(beforeHead, /^[0-9a-f]{40}$/i);
+    assert.match(afterHead, /^[0-9a-f]{40}$/i);
+    assert.notEqual(beforeHead, afterHead);
 
-    resetLastCommit();
+    resetToCommit(beforeHead);
 
-    assert.equal(getLastCommitMessage(repoDir), 'chore: initial commit');
+    assert.equal(getCurrentHead(), beforeHead);
     assert.match(getStatusLine(repoDir, 'README.md'), /^ M README\.md/);
+  });
+});
+
+test('resetToCommit rejects refs and options that are not full commit hashes', { skip: skipWithoutGit }, async () => {
+  await withRepo(() => {
+    assert.throws(() => resetToCommit('HEAD~1'), /full 40-character commit hash/);
+    assert.throws(() => resetToCommit('main'), /full 40-character commit hash/);
+    assert.throws(() => resetToCommit('--hard'), /full 40-character commit hash/);
   });
 });
