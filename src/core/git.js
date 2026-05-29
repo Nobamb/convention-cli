@@ -544,13 +544,81 @@ export function getCurrentHead() {
 }
 
 /**
+ * Git graph 검증에 사용할 commit hash가 안전한 40자리 전체 hash인지 확인합니다.
+ *
+ * @param {*} commitHash - 사용자가 직접 입력한 값이 아니라 reset transaction에서 읽은 commit hash 후보입니다.
+ * @returns {boolean} - 값이 문자열이고 40자리 16진수 commit hash 형식이면 true를 반환합니다.
+ */
+function isFullCommitHash(commitHash) {
+  // reset transaction 파일이 수동 편집되었거나 깨진 경우를 대비해 Git 명령 실행 전에 형식을 다시 확인합니다.
+  return (
+    typeof commitHash === "string" && FULL_COMMIT_HASH_PATTERN.test(commitHash)
+  );
+}
+
+/**
+ * 하나의 commit이 다른 commit의 ancestor인지 확인합니다.
+ *
+ * @param {string} ancestorHash - reset 시작점으로 기록된 beforeHead hash입니다. 이 commit이 afterHead의 조상이어야 안전한 reset 범위가 됩니다.
+ * @param {string} descendantHash - reset 종료점으로 기록된 afterHead hash입니다. 현재 HEAD와 같아야 하고 beforeHead를 포함한 히스토리 위에 있어야 합니다.
+ * @returns {boolean} - `ancestorHash`가 `descendantHash`의 ancestor이면 true, 형식 오류나 Git 검증 실패가 있으면 false를 반환합니다.
+ */
+export function isAncestorCommit(ancestorHash, descendantHash) {
+  // 두 hash 모두 40자리 전체 hash일 때만 Git graph 검증을 진행합니다.
+  if (!isFullCommitHash(ancestorHash) || !isFullCommitHash(descendantHash)) {
+    return false;
+  }
+
+  try {
+    // `merge-base --is-ancestor A B`는 A가 B의 ancestor이면 exit code 0으로 종료합니다.
+    // argv 배열을 사용하므로 hash 문자열이 shell에서 옵션이나 별도 명령으로 재해석되지 않습니다.
+    runGit(["merge-base", "--is-ancestor", ancestorHash, descendantHash]);
+    // Git 명령이 성공하면 ancestor 관계가 검증된 것입니다.
+    return true;
+  } catch {
+    // exit code 1은 ancestor가 아니라는 의미이고, 그 밖의 Git 오류도 reset을 중단해야 하는 안전 실패로 처리합니다.
+    return false;
+  }
+}
+
+/**
+ * 두 commit 사이의 실제 commit hash 목록을 Git graph 기준으로 조회합니다.
+ *
+ * @param {string} beforeHash - 범위에서 제외되는 시작 commit입니다. reset 실행 시 돌아갈 대상이므로 `rev-list before..after`의 왼쪽 값입니다.
+ * @param {string} afterHash - 범위에 포함되는 종료 commit입니다. 마지막 convention commit이므로 `rev-list before..after`의 오른쪽 값입니다.
+ * @returns {string[]} - `beforeHash` 이후부터 `afterHash`까지의 commit hash를 오래된 순서에서 최신 순서로 반환합니다. 형식 오류나 Git 오류가 있으면 빈 배열을 반환합니다.
+ */
+export function getCommitHashesBetween(beforeHash, afterHash) {
+  // 두 hash 모두 전체 hash 형식이어야 Git range 문자열을 만들 수 있습니다.
+  if (!isFullCommitHash(beforeHash) || !isFullCommitHash(afterHash)) {
+    return [];
+  }
+
+  try {
+    // hash 형식 검증을 끝낸 뒤 `before..after` range를 구성합니다.
+    // 이 문자열은 shell이 아니라 Git argv의 단일 인자로 전달되므로 shell injection 경로가 아닙니다.
+    const output = runGit(["rev-list", "--reverse", `${beforeHash}..${afterHash}`]);
+    // 출력이 비어 있으면 두 commit 사이에 commit이 없다는 뜻이므로 빈 배열을 반환합니다.
+    if (!output.trim()) {
+      return [];
+    }
+
+    // rev-list 출력은 한 줄에 하나의 commit hash가 오므로 줄 단위로 나누고 빈 줄을 제거합니다.
+    return output.split(/\r?\n/u).filter(Boolean);
+  } catch {
+    // 존재하지 않는 hash, 손상된 저장소, Git 오류가 발생하면 reset을 중단할 수 있도록 빈 배열을 반환합니다.
+    return [];
+  }
+}
+
+/**
  * 입력받은 해시로 mixed reset을 실행합니다.
  * 보안상 reset mode 인자는 받지 않고, 오직 beforeHead로만 reset합니다.
  * @param {string} commitHash - 40자 commit 해시 문자열
  */
 export function resetToCommit(commitHash) {
   // 입력받은 해시가 40자 commit hash인지 확인
-  if (!FULL_COMMIT_HASH_PATTERN.test(commitHash)) {
+  if (!isFullCommitHash(commitHash)) {
     throw new Error("Reset target must be a full 40-character commit hash.");
   }
 
