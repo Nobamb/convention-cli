@@ -18,7 +18,11 @@ import { runModelSetup } from "../src/commands/model.js";
 import { runPrCommand } from "../src/commands/pr.js";
 import { runReset } from "../src/commands/reset.js";
 import { runTemplateCommand } from "../src/commands/template.js";
+import { loadConfig, saveConfig } from "../src/config/store.js";
+import { runUpdateCheckIfNeeded } from "../src/core/update.js";
+import { getCurrentVersion } from "../src/core/version.js";
 import { error as logError } from "../src/utils/logger.js";
+import { info as logInfo } from "../src/utils/logger.js";
 
 /**
  * convention CLI의 단일 진입점입니다.
@@ -34,7 +38,9 @@ program
   .description(
     "AI-powered CLI tool to automate the Git commit workflow using Conventional Commits",
   )
-  .version("1.0.0");
+  // --version은 package.json의 현재 버전을 읽어 출력합니다.
+  // commander가 --version/-V를 parse 단계에서 처리하고 종료하므로 commit flow, config load, update check가 실행되지 않습니다.
+  .version(getCurrentVersion());
 
 // 프로그램 관련 설명
 program.addHelpText(
@@ -133,6 +139,28 @@ program.parse(process.argv);
 
 // 옵션 가져오기
 const options = program.opts();
+
+/**
+ * 일반 실행 명령에서만 npm update check를 수행합니다.
+ *
+ * @returns {Promise<void>} update check는 부가 기능이므로 호출자에게 결과를 반환하지 않고 조용히 완료합니다.
+ */
+async function runBackgroundUpdateCheck() {
+  try {
+    // loadConfig()가 반환한 사용자 설정을 기준으로 updateCheck와 lastUpdateCheckAt 정책을 적용합니다.
+    const config = loadConfig();
+    // runUpdateCheckIfNeeded()는 네트워크 실패, 저장 실패, 알림 실패를 내부에서 흡수해 본래 작업을 방해하지 않습니다.
+    await runUpdateCheckIfNeeded({
+      config,
+      saveConfig,
+      logger: {
+        info: logInfo,
+      },
+    });
+  } catch {
+    // update check는 편의 기능이므로 config load 등에서 문제가 생겨도 commit/pr/reset 흐름을 중단하지 않습니다.
+  }
+}
 
 /**
  * 옵션 우선순위에 따라 command 함수를 실행합니다.
@@ -307,6 +335,7 @@ async function main() {
   // --pr은 커밋/푸시/리셋과 독립된 PR 자동화 흐름입니다.
   // preview 또는 --yes 정책 전에는 원격 PR 생성을 수행하지 않습니다.
   if (options.pr) {
+    await runBackgroundUpdateCheck();
     await runPrCommand({
       base: options.base,
       head: options.head,
@@ -320,6 +349,7 @@ async function main() {
 
   // step 모드로 커밋 실행
   if (options.step) {
+    await runBackgroundUpdateCheck();
     // 변경 파일을 하나씩 개별 커밋합니다.
     await runStepCommit({ push: options.push });
     return;
@@ -327,6 +357,7 @@ async function main() {
 
   // batch 모드로 커밋 실행
   if (options.batch) {
+    await runBackgroundUpdateCheck();
     // 전체 변경 파일을 하나의 통합 커밋으로 만듭니다.
     await runBatchCommit({ push: options.push });
     return;
@@ -334,12 +365,14 @@ async function main() {
 
   // group 모드로 커밋 실행
   if (options.group) {
+    await runBackgroundUpdateCheck();
     // 그룹 preview와 사용자 확인 이후 그룹별 커밋을 생성합니다.
     await runGroupedCommit({ push: options.push });
     return;
   }
 
   // 지정된 옵션이 없으면 저장된 설정(config.mode)에 따라 기본 commit flow를 시작합니다.
+  await runBackgroundUpdateCheck();
   await runDefaultCommit({ push: options.push });
 }
 
