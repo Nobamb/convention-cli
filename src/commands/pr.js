@@ -20,6 +20,7 @@ import {
 } from "../core/github.js";
 import { getChangedFiles, getFileDiffs, isGitRepository } from "../core/git.js";
 import { error, info, success, warn } from "../utils/logger.js";
+import { setOutputs } from "../utils/githubActions.js";
 import {
   PR_PREVIEW_DECISIONS,
   confirmExternalProviderRequest,
@@ -487,6 +488,15 @@ export async function handlePrPreview({
       return { created, printed: false, canceled: false };
     }
 
+    // 비대화형 모드에서는 Create/Edit/Print/Cancel 선택 prompt를 띄울 수 없습니다.
+    // --print-only 또는 --yes가 없는 상태에서는 원격 PR을 만들지 않고 안전하게 중단합니다.
+    if (options.interactive === false) {
+      warn(
+        "비대화형 모드에서는 PR preview 선택 prompt를 띄울 수 없습니다. --print-only 또는 --yes를 함께 사용해 주세요.",
+      );
+      return { created: false, printed: false, canceled: true };
+    }
+
     // print/create/edit/cancel 중 하나를 선택
     const decision = await selectPrPreviewAction();
 
@@ -564,6 +574,15 @@ export async function runPrCommand(options = {}) {
 
   // 외부 ai 사용 여부 확인
   if (shouldConfirmPrExternalProviderRequest(config)) {
+    // CI 또는 --no-interactive에서는 외부 AI 전송 확인 prompt를 띄울 수 없습니다.
+    // --yes는 PR 생성 승인일 뿐 외부 provider 전송 동의가 아니므로, 설정으로 명시 동의하지 않았다면 중단합니다.
+    if (options.interactive === false) {
+      warn(
+        "외부 AI Provider 전송 확인이 필요하지만 비대화형 모드라 prompt를 띄울 수 없습니다. confirmExternalTransmission 설정을 확인해 주세요.",
+      );
+      return;
+    }
+
     // 외부 ai 사용 승인
     const approved = await confirmExternalProviderRequest({
       provider: config.provider,
@@ -595,6 +614,13 @@ export async function runPrCommand(options = {}) {
     securitySummary:
       "Secret-like values are masked and raw diff content is excluded.",
     config,
+  });
+
+  // GitHub Actions에서 다음 step이 PR 제목/본문을 재사용할 수 있도록 output을 기록합니다.
+  // output writer는 내부에서 secret-like 값을 마스킹하고, GITHUB_OUTPUT이 없는 로컬 실행에서는 조용히 건너뜁니다.
+  setOutputs({
+    pr_title: title,
+    pr_body: body,
   });
 
   // github remote 감지 작업
