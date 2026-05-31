@@ -21,6 +21,7 @@ import { runTemplateCommand } from "../src/commands/template.js";
 import { loadConfig, saveConfig } from "../src/config/store.js";
 import { runUpdateCheckIfNeeded } from "../src/core/update.js";
 import { getCurrentVersion } from "../src/core/version.js";
+import { buildRuntimeOptions } from "../src/utils/env.js";
 import { error as logError } from "../src/utils/logger.js";
 import { info as logInfo } from "../src/utils/logger.js";
 
@@ -117,7 +118,12 @@ program.option(
 
 program.option(
   "--yes",
-  "PR preview 확인을 생략하고 보안 검증 통과 시 PR 생성을 진행합니다. --pr와 함께 사용합니다.",
+  "비대화형 실행에서 명시 승인으로 처리합니다. commit/PR preview 확인을 생략하지만 보안 검증과 외부 전송 gate는 우회하지 않습니다.",
+);
+
+program.option(
+  "--no-interactive",
+  "CI/자동화 환경에서 사용자 입력 prompt를 띄우지 않고 실행합니다. 필요한 승인 값이 없으면 명확한 오류로 중단합니다.",
 );
 
 program.option(
@@ -147,6 +153,14 @@ const options = program.opts();
  */
 async function runBackgroundUpdateCheck() {
   try {
+    const runtime = buildRuntimeOptions(options);
+
+    // CI/GitHub Actions에서는 본래 workflow 실행을 빠르게 끝내고 로그를 안정적으로 유지하기 위해
+    // npm registry update check를 수행하지 않습니다. update check는 사용자 편의 기능이므로 CI 실패 원인이 되면 안 됩니다.
+    if (runtime.isCI || runtime.isGitHubActions) {
+      return;
+    }
+
     // loadConfig()가 반환한 사용자 설정을 기준으로 updateCheck와 lastUpdateCheckAt 정책을 적용합니다.
     const config = loadConfig();
     // runUpdateCheckIfNeeded()는 네트워크 실패, 저장 실패, 알림 실패를 내부에서 흡수해 본래 작업을 방해하지 않습니다.
@@ -171,6 +185,9 @@ async function runBackgroundUpdateCheck() {
  * 4. 실행 옵션에 따라 commit flow 시작
  */
 async function main() {
+  // CI 감지, --yes, --no-interactive 옵션을 command 계층에 일관되게 전달하기 위한 런타임 정책입니다.
+  // 하위 command는 이 객체를 기준으로 prompt 호출 가능 여부와 명시 승인 여부를 판단합니다.
+  const runtime = buildRuntimeOptions(options);
   // 설정 옵션 명시 여부
   const hasConfigOption =
     options.model !== undefined ||
@@ -188,19 +205,21 @@ async function main() {
     options.pr !== undefined ||
     options.push !== undefined ||
     options.agyMcp !== undefined;
+  // 설정 명령과 함께 쓰면 의미가 모호한 런타임 제어 옵션입니다.
+  const hasRuntimeModifier =
+    options.yes !== undefined || options.noInteractive !== undefined;
   // --pr에만 의미가 있는 보조 옵션 목록입니다.
   const hasPrModifier =
     options.base !== undefined ||
     options.head !== undefined ||
     options.remote !== undefined ||
     options.printOnly !== undefined ||
-    options.yes !== undefined ||
     options.draft !== undefined;
 
   // 1. 설정 옵션과 실행 옵션 혼합 사용 시 에러 발생
-  if (hasConfigOption && hasExecutionOption) {
+  if (hasConfigOption && (hasExecutionOption || hasRuntimeModifier)) {
     throw new Error(
-      "설정 옵션(--set-mode, --language, --question, --model)과 커밋 실행 옵션(--step, --batch, --group, --reset, --push)은 함께 사용할 수 없습니다. 의도를 명확히 하여 한 종류의 명령어만 입력해 주세요.",
+      "설정 옵션(--set-mode, --language, --question, --model)과 실행/런타임 옵션(--step, --batch, --group, --reset, --push, --yes, --no-interactive)은 함께 사용할 수 없습니다. 의도를 명확히 하여 한 종류의 명령어만 입력해 주세요.",
     );
   }
 
@@ -342,6 +361,10 @@ async function main() {
       remote: options.remote,
       printOnly: options.printOnly,
       yes: options.yes,
+      noInteractive: options.noInteractive,
+      interactive: runtime.interactive,
+      isCI: runtime.isCI,
+      isGitHubActions: runtime.isGitHubActions,
       draft: options.draft,
     });
     return;
@@ -351,7 +374,7 @@ async function main() {
   if (options.step) {
     await runBackgroundUpdateCheck();
     // 변경 파일을 하나씩 개별 커밋합니다.
-    await runStepCommit({ push: options.push });
+    await runStepCommit({ push: options.push, ...runtime });
     return;
   }
 
@@ -359,7 +382,7 @@ async function main() {
   if (options.batch) {
     await runBackgroundUpdateCheck();
     // 전체 변경 파일을 하나의 통합 커밋으로 만듭니다.
-    await runBatchCommit({ push: options.push });
+    await runBatchCommit({ push: options.push, ...runtime });
     return;
   }
 
@@ -367,13 +390,13 @@ async function main() {
   if (options.group) {
     await runBackgroundUpdateCheck();
     // 그룹 preview와 사용자 확인 이후 그룹별 커밋을 생성합니다.
-    await runGroupedCommit({ push: options.push });
+    await runGroupedCommit({ push: options.push, ...runtime });
     return;
   }
 
   // 지정된 옵션이 없으면 저장된 설정(config.mode)에 따라 기본 commit flow를 시작합니다.
   await runBackgroundUpdateCheck();
-  await runDefaultCommit({ push: options.push });
+  await runDefaultCommit({ push: options.push, ...runtime });
 }
 
 /**
