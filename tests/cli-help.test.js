@@ -40,12 +40,21 @@ test('CLI help includes group option', () => {
   assert.match(output, /그룹화/);
 });
 
+test('CLI help includes non-interactive and yes options', () => {
+  const output = execFileSync(process.execPath, ['bin/convention.js', '--help'], {
+    encoding: 'utf8',
+  });
+
+  assert.match(output, /--yes/);
+  assert.match(output, /--no-interactive/);
+});
+
 test('CLI routes reset before commit and push flows', () => {
   const source = fs.readFileSync('bin/convention.js', 'utf8');
   const resetIndex = source.indexOf('if (options.reset)');
   const stepIndex = source.indexOf('if (options.step)');
   const batchIndex = source.indexOf('if (options.batch)');
-  const defaultCommitIndex = source.indexOf('runDefaultCommit({ push: options.push })');
+  const defaultCommitIndex = source.indexOf('runDefaultCommit({ push: options.push, ...runtime })');
 
   assert.match(source, /import \{ runReset \} from "\.\.\/src\/commands\/reset\.js";/);
   assert.notEqual(resetIndex, -1);
@@ -57,7 +66,7 @@ test('CLI routes reset before commit and push flows', () => {
 test('CLI routes group option to grouped commit flow', () => {
   const source = fs.readFileSync('bin/convention.js', 'utf8');
   const groupIndex = source.indexOf('if (options.group)');
-  const defaultCommitIndex = source.indexOf('runDefaultCommit({ push: options.push })');
+  const defaultCommitIndex = source.indexOf('runDefaultCommit({ push: options.push, ...runtime })');
 
   assert.match(source, /runGroupedCommit/);
   assert.notEqual(groupIndex, -1);
