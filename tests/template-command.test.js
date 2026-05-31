@@ -181,7 +181,7 @@ test("CLI routes template before reset and default commit flows", () => {
   const templateIndex = source.indexOf("if (options.template !== undefined)");
   const resetIndex = source.indexOf("if (options.reset)");
   const defaultCommitIndex = source.indexOf(
-    "runDefaultCommit({ push: options.push })",
+    "runDefaultCommit({ push: options.push, ...runtime })",
   );
 
   assert.match(source, /runTemplateCommand/);
