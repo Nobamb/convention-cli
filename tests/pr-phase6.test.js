@@ -460,3 +460,67 @@ test('Phase 6 provider generation works with mock provider without network acces
   assert.match(body, /## Changes/);
   assert.match(body, /## Tests/);
 });
+
+test('Phase 8 AO handlePrPreview cancels non-interactive PR create without --yes or --print-only', async () => {
+  let createCalled = false;
+
+  const result = await handlePrPreview({
+    title: 'feat: add CI PR flow',
+    body: '## Summary\n- Add\n\n## Changes\n- PR flow\n\n## Tests\n- Not run',
+    context: {
+      baseBranch: 'main',
+      currentBranch: 'feature/ci',
+      changedFiles: ['src/commands/pr.js'],
+    },
+    options: { interactive: false },
+    create() {
+      createCalled = true;
+    },
+  });
+
+  assert.deepEqual(result, { created: false, printed: false, canceled: true });
+  assert.equal(createCalled, false);
+});
+
+test('Phase 8 AO handlePrPreview allows non-interactive PR print-only', async () => {
+  let createCalled = false;
+
+  const result = await handlePrPreview({
+    title: 'feat: add CI PR flow',
+    body: '## Summary\n- Add\n\n## Changes\n- PR flow\n\n## Tests\n- Not run',
+    context: {
+      baseBranch: 'main',
+      currentBranch: 'feature/ci',
+      changedFiles: ['src/commands/pr.js'],
+    },
+    options: { interactive: false, printOnly: true },
+    create() {
+      createCalled = true;
+    },
+  });
+
+  assert.deepEqual(result, { created: false, printed: true, canceled: false });
+  assert.equal(createCalled, false);
+});
+
+test('Phase 8 AO handlePrPreview allows non-interactive PR create only with --yes', async () => {
+  let createCalled = false;
+
+  const result = await handlePrPreview({
+    title: 'feat: add CI PR flow',
+    body: '## Summary\n- Add\n\n## Changes\n- PR flow\n\n## Tests\n- Not run',
+    context: {
+      baseBranch: 'main',
+      currentBranch: 'feature/ci',
+      changedFiles: ['src/commands/pr.js'],
+    },
+    options: { interactive: false, yes: true },
+    create() {
+      createCalled = true;
+      return true;
+    },
+  });
+
+  assert.deepEqual(result, { created: true, printed: false, canceled: false });
+  assert.equal(createCalled, true);
+});
