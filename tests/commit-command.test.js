@@ -1172,3 +1172,88 @@ test('runBatchCommit regenerate keeps large diff on summary prompt path', { skip
     assert.equal(getCommitMessages(repoDir)[0], 'chore: update project files');
   });
 });
+
+test('Phase 8 AO runBatchCommit stops in non-interactive mode without --yes', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    saveRuntimeConfig({
+      mode: 'batch',
+      confirmBeforeCommit: true,
+    });
+    writeFile(repoDir, 'README.md', 'non interactive without yes\n');
+
+    await commands.runBatchCommit({ interactive: false, yes: false });
+
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: initial commit');
+    assert.match(getStatus(repoDir), /^ M README\.md/m);
+  });
+});
+
+test('Phase 8 AO runBatchCommit commits in non-interactive mode with --yes', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    saveRuntimeConfig({
+      mode: 'batch',
+      confirmBeforeCommit: true,
+    });
+    writeFile(repoDir, 'README.md', 'non interactive with yes\n');
+
+    await commands.runBatchCommit({ interactive: false, yes: true });
+
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: update project files');
+    assert.equal(getStatus(repoDir), '');
+  });
+});
+
+test('Phase 8 AP runBatchCommit writes commit_message GitHub Actions output after commit', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'convention-cli-command-output-'));
+    const outputFile = path.join(outputDir, 'github-output.txt');
+    const previousOutput = process.env.GITHUB_OUTPUT;
+
+    try {
+      fs.writeFileSync(outputFile, '', 'utf8');
+      process.env.GITHUB_OUTPUT = outputFile;
+      saveRuntimeConfig({
+        mode: 'batch',
+        confirmBeforeCommit: true,
+      });
+      writeFile(repoDir, 'README.md', 'github actions output commit\n');
+
+      await commands.runBatchCommit({ interactive: false, yes: true });
+
+      const output = fs.readFileSync(outputFile, 'utf8');
+      assert.match(output, /commit_message=chore: update project files/);
+    } finally {
+      if (previousOutput === undefined) {
+        delete process.env.GITHUB_OUTPUT;
+      } else {
+        process.env.GITHUB_OUTPUT = previousOutput;
+      }
+      fs.rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('Phase 8 AN non-interactive mode does not prompt for external AI transmission', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    let fetchCalled = false;
+    globalThis.fetch = async () => {
+      fetchCalled = true;
+      throw new Error('External provider must not be called without transmission approval');
+    };
+
+    saveRuntimeConfig({
+      mode: 'batch',
+      provider: 'gemini',
+      apiKey: 'test-key',
+      modelVersion: 'gemini-test',
+      confirmBeforeCommit: true,
+    });
+    writeFile(repoDir, 'README.md', 'external ai non interactive\n');
+
+    await commands.runBatchCommit({ interactive: false, yes: true });
+
+    assert.equal(fetchCalled, false);
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: initial commit');
+    assert.match(getStatus(repoDir), /^ M README\.md/m);
+  });
+});
