@@ -152,6 +152,30 @@ convention --pr --draft
 3. **Sensitive Information Detection & Redaction**: During file extraction and diff collection, sensitive files like `.env`, `credentials.json`, and `*.pem` are strictly excluded. Furthermore, if secret tokens or credential patterns (e.g., `API_KEY=`, `PASSWORD=`) are found in the diff, they are automatically redacted with `[REDACTED]` to prevent leakages to AI models.
 4. **Preview & Manual Editing Support**: Once the title and body are generated, an interactive menu is displayed (`Create PR`, `Edit manually`, `Print only`, `Cancel`) along with a premium terminal preview. Even after editing via `Edit manually`, the edited content is passed through the `cleanPrBody` filter and `assertSafePrContent` validator to ensure structure integrity and block any raw code leakages.
 
+### GitHub Actions / CI
+
+Convention CLI detects `CI=true` and `GITHUB_ACTIONS=true` and disables interactive prompts automatically. Use `--no-interactive` explicitly in workflows, and add `--yes` only when a commit or PR creation should be treated as approved.
+
+Safe PR document generation example:
+
+```bash
+convention --pr --print-only --no-interactive
+```
+
+Commit automation example:
+
+```bash
+convention --batch --yes --no-interactive
+```
+
+GitHub Actions outputs are written when `GITHUB_OUTPUT` is available:
+
+- `commit_message`
+- `pr_title`
+- `pr_body`
+
+See [docs/github-actions.md](docs/github-actions.md) for workflow examples, output usage, secret handling, and fork PR precautions.
+
 ### GitHub Copilot Integration (Experimental)
 
 To use GitHub Copilot as the AI provider:
@@ -463,3 +487,27 @@ convention --pr --draft
 2. **외부 AI 전송 전 보안 승인 게이트**: Gemini 또는 OpenAI와 같은 외부 AI Provider 설정을 사용하는 경우, 로컬 Git metadata가 서버로 전송되기 전에 확인 프롬프트를 띄웁니다. 설정 파일(`config.json`)에 `"confirmExternalTransmission": "never"`를 입력하여 이를 영구 동의할 수도 있습니다.
 3. **민감 정보 탐지 및 제외**: 변경 파일 추출 및 Diff 수집 과정에서 `.env`, `credentials.json`, `*.pem` 등의 민감 파일은 원천 배제되며, diff에 `API_KEY=`, `PASSWORD=` 등 비밀 토큰 성격의 패턴이 보이면 자동으로 `[REDACTED]` 마스킹을 수행하여 AI 모델로 불필요한 정보가 노출되는 것을 철저히 차단합니다.
 4. **미리보기 및 수동 편집 지원**: PR 제목과 본문이 완성되면 터미널 화면에 예쁘게 렌더링된 미리보기를 출력하고 대화형 선택지(`Create PR`, `Edit manually`, `Print only`, `Cancel`)를 제공합니다. `Edit manually`를 선택하여 제목과 본문을 직접 편집한 뒤에도 `cleanPrBody` 필터와 `assertSafePrContent` 검증기를 통과시켜 필수 섹션 무결성 및 소스 코드 원문 섞임 차단을 동일하게 검사합니다.
+
+### GitHub Actions / CI
+
+Convention CLI는 `CI=true`와 `GITHUB_ACTIONS=true` 환경을 감지하면 대화형 프롬프트를 자동으로 비활성화합니다. 워크플로에서는 `--no-interactive`를 명시적으로 사용하는 것을 권장하며, 실제 커밋 생성이나 PR 생성까지 승인하려는 경우에만 `--yes`를 함께 사용합니다.
+
+안전한 PR 문서 생성 예시는 다음과 같습니다.
+
+```bash
+convention --pr --print-only --no-interactive
+```
+
+CI에서 실제 커밋 자동화를 실행하려면 다음처럼 명시 승인 옵션을 함께 사용합니다.
+
+```bash
+convention --batch --yes --no-interactive
+```
+
+GitHub Actions 환경에서 `GITHUB_OUTPUT`이 제공되면 다음 output을 기록합니다.
+
+- `commit_message`
+- `pr_title`
+- `pr_body`
+
+자세한 workflow 예시, output 사용법, secret 처리, fork PR 주의사항은 [docs/github-actions.md](docs/github-actions.md)를 참고하세요.
