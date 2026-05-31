@@ -97,6 +97,15 @@ test('redactSecrets masks common API key and bearer token variants', () => {
     redactSecrets('failed https://user:secret@example.test/v1?api_key=abc&token=def'),
     'failed https://[REDACTED]@example.test/v1?api_key=[REDACTED]&token=[REDACTED]',
   );
+  assert.equal(
+    redactSecrets('DATABASE_URL=postgres://user:pass@example.test/db'),
+    'DATABASE_URL=[REDACTED]',
+  );
+  assert.equal(redactSecrets('AWS_ACCESS_KEY_ID=AKIA_TEST'), 'AWS_ACCESS_KEY_ID=[REDACTED]');
+  assert.equal(
+    redactSecrets('-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----'),
+    '[REDACTED]',
+  );
 });
 
 test('error redacts secrets before writing to console.error', () => {
