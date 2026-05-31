@@ -24,6 +24,7 @@ import {
 import { classifyChangedFiles, groupFilesByIntent } from "../core/grouping.js";
 import { isUsageExhaustedError } from "../providers/errors.js";
 import { error, info, success, warn } from "../utils/logger.js";
+import { setOutput } from "../utils/githubActions.js";
 import {
   COMMIT_DECISIONS,
   GROUPING_DECISIONS,
@@ -163,6 +164,16 @@ async function shouldSendDiffToAI(config, options = {}, sessionState = {}) {
     sessionState.externalTransmissionApproved
   ) {
     return true;
+  }
+
+  // CI 또는 --no-interactive 모드에서는 prompts가 입력을 영원히 기다릴 수 있으므로 여기서 중단합니다.
+  // --yes는 commit/PR 생성 승인 플래그일 뿐, diff를 외부 AI provider로 보내는 동의를 대신하지 않습니다.
+  // 외부 전송을 자동화하려면 사용자가 config에 confirmExternalTransmission: "never"를 명시해야 합니다.
+  if (options.runtime?.interactive === false) {
+    warn(
+      "외부 AI 전송 확인이 필요하지만 비대화형 모드라 prompt를 띄울 수 없습니다. confirmExternalTransmission 설정을 확인해 주세요.",
+    );
+    return false;
   }
 
   // 그 외(always, once의 첫 시도, 또는 민감정보 탐지로 인한 강제 프롬프트)에는 사용자에게 확인
@@ -506,6 +517,20 @@ function stageAndCommit(message, filesToCommit) {
 }
 
 /**
+ * GitHub Actions에서 다음 step이 사용할 수 있도록 최종 커밋 메시지를 output으로 기록합니다.
+ *
+ * 이 함수는 실제 commit이 성공한 뒤에만 호출합니다. AI가 생성한 후보 메시지나 사용자가 취소한 메시지를
+ * output으로 내보내면 workflow 후속 step이 실제 Git 히스토리에 없는 값을 사용할 수 있기 때문입니다.
+ * `setOutput()` 내부에서 secret 의심 패턴을 한 번 더 마스킹하므로 CI 로그와 output 파일 모두 안전하게 유지됩니다.
+ *
+ * @param {string} message - 실제 `git commit -m`에 사용된 최종 커밋 메시지입니다.
+ * @returns {void} output 기록 성공 여부는 부가 정보이므로 command 흐름에는 반환하지 않습니다.
+ */
+function writeCommitMessageOutput(message) {
+  setOutput("commit_message", message);
+}
+
+/**
  * 마지막 실행 복구용 트랜잭션을 생성합니다.
  * convention-cli 실행 전의 HEAD와 트랜잭션 정보를 기록하여, 추후 --reset 시 안전하게 복구하기 위한 기준점을 마련합니다.
  * @param {string} mode 커밋 모드 (step, batch, group 등)
@@ -595,6 +620,7 @@ export async function runCommitDecisionFlow({
   groupInfo,
   sessionState,
   transmissionOptions = {},
+  runtime = {},
 }) {
   // 429 복구나 model switch가 발생하면 config가 바뀔 수 있으므로 현재 flow 내부 상태로 관리합니다.
   let currentConfig = config;
@@ -617,6 +643,7 @@ export async function runCommitDecisionFlow({
     groupInfo,
     config: currentConfig,
     transmissionOptions,
+    runtime,
     sessionState,
   });
 
@@ -653,6 +680,8 @@ export async function runCommitDecisionFlow({
   if (currentConfig.confirmBeforeCommit !== true) {
     // commit 트랜잭션을 기록하고, 메시지로 commit 수행
     const commitHash = stageAndCommit(currentMessage, filesToCommit);
+    // 실제 commit이 성공했으므로 GitHub Actions output에 최종 커밋 메시지를 기록합니다.
+    writeCommitMessageOutput(currentMessage);
     // 트랜잭션 정보를 기록하고, 결과 반환
     return {
       committed: true,
@@ -692,6 +721,27 @@ export async function runCommitDecisionFlow({
     // 사용자에게 메시지/파일/mode/provider를 보여줍니다. diff 원문은 출력하지 않습니다.
     previewCommitMessage({ message: currentMessage, ...context });
 
+    // 비대화형 모드에서는 select prompt를 띄우지 않습니다.
+    // --yes가 있으면 사용자가 명시 승인한 것으로 보고 commit을 진행하고, 없으면 Git 작업 없이 중단합니다.
+    if (runtime.interactive === false) {
+      if (runtime.yes === true) {
+        const commitHash = stageAndCommit(currentMessage, filesToCommit);
+        writeCommitMessageOutput(currentMessage);
+        return {
+          committed: true,
+          commitHash,
+          message: currentMessage,
+          files: filesToCommit,
+          config: currentConfig,
+        };
+      }
+
+      warn(
+        "비대화형 모드에서는 커밋 확인 prompt를 띄울 수 없습니다. 커밋을 진행하려면 --yes를 함께 사용해 주세요.",
+      );
+      return { committed: false, stopped: true, config: currentConfig };
+    }
+
     // 사용자의 다음 행동을 안정적인 enum 값으로 받습니다.
     const decision = await selectCommitDecision({
       message: currentMessage,
@@ -702,6 +752,8 @@ export async function runCommitDecisionFlow({
     if (decision === COMMIT_DECISIONS.COMMIT) {
       // 트랜잭션을 완료하고, commit 수행
       const commitHash = stageAndCommit(currentMessage, filesToCommit);
+      // 실제 commit이 성공했으므로 GitHub Actions output에 최종 커밋 메시지를 기록합니다.
+      writeCommitMessageOutput(currentMessage);
       // commit hash를 반환
       return {
         committed: true,
@@ -759,6 +811,7 @@ export async function runCommitDecisionFlow({
         config: currentConfig,
         previousMessage: currentMessage,
         transmissionOptions,
+        runtime,
         sessionState,
       });
 
@@ -804,11 +857,18 @@ async function pushAfterSuccessfulCommit(options = {}) {
     return;
   }
 
+  let approved = false;
+
   // push 확인은 commit message 확인과 별개입니다. confirmBeforeCommit=false는 커밋 확인만 생략하는 설정이므로,
-  // 원격 히스토리를 바꾸는 push는 항상 별도 confirmAction 승인을 받아야 합니다.
-  const approved = await confirmAction(
-    "커밋이 완료되었습니다. 현재 브랜치를 원격 저장소로 push할까요?",
-  );
+  // 원격 히스토리를 바꾸는 push는 별도 승인 정책을 유지합니다.
+  if (options.interactive === false) {
+    // 비대화형 모드에서는 prompt를 띄우지 않고, --yes가 있을 때만 push까지 명시 승인된 것으로 봅니다.
+    approved = options.yes === true;
+  } else {
+    approved = await confirmAction(
+      "커밋이 완료되었습니다. 현재 브랜치를 원격 저장소로 push할까요?",
+    );
+  }
 
   if (!approved) {
     warn(
@@ -1045,6 +1105,7 @@ async function createCommitMessageWithRecovery({
   config,
   previousMessage,
   transmissionOptions = {},
+  runtime = {},
   sessionState,
   skipInitialTransmission = false,
 }) {
@@ -1062,7 +1123,7 @@ async function createCommitMessageWithRecovery({
       ? true
       : await shouldSendDiffToAI(
           currentConfig,
-          { ...transmissionOptions, diff },
+          { ...transmissionOptions, diff, runtime },
           sessionState,
         );
 
@@ -1104,6 +1165,19 @@ async function createCommitMessageWithRecovery({
     } catch (providerError) {
       // localLLM 사용 불가능 오류 catch
       if (isLocalLLMUnavailableError(providerError, currentConfig)) {
+        // localLLM 장애 복구는 provider/model 선택 UI를 필요로 하므로 비대화형 모드에서는 실행할 수 없습니다.
+        // CI가 입력 대기 상태로 멈추지 않도록 Git 작업 없이 명확히 중단합니다.
+        if (runtime.interactive === false) {
+          warn(
+            "localLLM 복구 선택이 필요하지만 비대화형 모드라 prompt를 띄울 수 없습니다. Git 작업 없이 중단합니다.",
+          );
+          return {
+            stopped: true,
+            message: null,
+            config: currentConfig,
+          };
+        }
+
         warn(
           "localLLM이 현재 diff를 처리하지 못했습니다. 다른 localLLM 또는 API 사용 여부를 확인합니다.",
         );
@@ -1155,6 +1229,18 @@ async function createCommitMessageWithRecovery({
       // 사용량 소진 오류 catch
       if (!isUsageExhaustedError(providerError)) {
         throw providerError;
+      }
+      // 429/사용량 소진 복구는 API Key 교체 또는 provider 전환 prompt를 필요로 합니다.
+      // 비대화형 모드에서는 자동으로 다른 secret을 요구할 수 없으므로 안전하게 중단합니다.
+      if (runtime.interactive === false) {
+        warn(
+          "AI Provider 사용량 한도 복구 선택이 필요하지만 비대화형 모드라 prompt를 띄울 수 없습니다. Git 작업 없이 중단합니다.",
+        );
+        return {
+          stopped: true,
+          message: null,
+          config: currentConfig,
+        };
       }
       // 사용량 소진 오류 시 경고
       warn(
@@ -1262,6 +1348,7 @@ export async function runStepCommit(options = {}) {
         mode: "step",
         sessionState,
         transmissionOptions: { file },
+        runtime: options,
       });
 
       // provider/model 전환 같은 복구 결과를 다음 파일 처리에도 최신 config로 반영합니다.
@@ -1287,6 +1374,8 @@ export async function runStepCommit(options = {}) {
     // step 모드는 파일별로 커밋을 건너뛸 수 있으므로, 최소 1개 이상 성공했을 때만 push를 후속 실행합니다.
     await pushAfterSuccessfulCommit({
       push: options.push && committedCount > 0,
+      yes: options.yes,
+      interactive: options.interactive,
     });
 
     // 커밋 개수가 0이면 안내 메시지 출력
@@ -1359,6 +1448,7 @@ export async function runBatchCommit(options = {}) {
       config,
       mode: "batch",
       sessionState,
+      runtime: options,
     });
 
     // provider/model 전환 같은 복구 결과를 push 이전 최신 config로 반영합니다.
@@ -1432,7 +1522,20 @@ export async function runGroupedCommit(options = {}) {
   // 그룹 미리보기
   previewGrouping(groups);
   // 그룹 결정
-  const decision = await selectGroupingDecision();
+  // 비대화형 모드에서는 그룹 선택 prompt를 띄우지 않습니다. --yes가 있으면 제안된 그룹을 승인하고,
+  // 없으면 파일을 stage/commit하지 않고 중단합니다.
+  const decision =
+    options.interactive === false
+      ? options.yes === true
+        ? GROUPING_DECISIONS.YES
+        : GROUPING_DECISIONS.CANCEL
+      : await selectGroupingDecision();
+
+  if (options.interactive === false && options.yes !== true) {
+    warn(
+      "비대화형 모드에서는 그룹 커밋 확인 prompt를 띄울 수 없습니다. 진행하려면 --yes를 함께 사용해 주세요.",
+    );
+  }
 
   // 그룹 커밋 취소 시 종료
   if (decision === GROUPING_DECISIONS.CANCEL) {
@@ -1491,6 +1594,7 @@ export async function runGroupedCommit(options = {}) {
         config,
         mode: "batch",
         sessionState,
+        runtime: options,
       });
 
       // 최신 config로 업데이트
@@ -1514,6 +1618,8 @@ export async function runGroupedCommit(options = {}) {
     // 커밋이 성공한 경우에만 push 확인 및 push 수행
     await pushAfterSuccessfulCommit({
       push: options.push && committedCount > 0,
+      yes: options.yes,
+      interactive: options.interactive,
     });
 
     // commit count가 없다면 사용자에게 커밋이 없음을 알림
