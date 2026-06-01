@@ -456,6 +456,60 @@ export async function confirmAction(message) {
 }
 
 /**
+ * upstream이 없는 branch를 push할 때 사용할 remote를 선택합니다.
+ *
+ * 사용자가 직접 remote 이름을 입력하게 하지 않고 `git remote`로 확인된 목록만 선택지로 노출합니다.
+ * 이렇게 하면 오타나 shell 해석 문제를 줄이고, remote URL이나 인증 정보가 화면에 출력되는 일을 피할 수 있습니다.
+ *
+ * @param {object} options 선택 UI 입력값
+ * @param {string} options.branchName 현재 branch 이름
+ * @param {string[]} options.remotes 등록된 remote 이름 목록
+ * @returns {Promise<string|null>} 선택한 remote 이름, 또는 취소 시 null
+ */
+export async function selectUpstreamRemote({ branchName, remotes } = {}) {
+  const safeRemotes = Array.isArray(remotes)
+    ? remotes.filter(
+        (remote) => typeof remote === "string" && remote.trim().length > 0,
+      )
+    : [];
+
+  if (!branchName || safeRemotes.length === 0) {
+    return null;
+  }
+
+  const preferredRemotes = [
+    ...safeRemotes.filter((remote) => remote === "origin"),
+    ...safeRemotes.filter((remote) => remote !== "origin"),
+  ];
+
+  const choices = preferredRemotes.map((remote) => ({
+    title: `${remote}/${branchName}로 upstream 설정 후 push`,
+    value: remote,
+  }));
+
+  choices.push({
+    title: "push 취소",
+    value: null,
+  });
+
+  const response = await prompts(
+    {
+      type: "select",
+      name: "remote",
+      message: `현재 브랜치 '${branchName}'에 upstream이 없습니다. 어떻게 진행할까요?`,
+      choices,
+      initial: 0,
+    },
+    {
+      // ESC/Ctrl+C는 remote 변경 없이 취소로 처리합니다.
+      onCancel: () => false,
+    },
+  );
+
+  return safeRemotes.includes(response?.remote) ? response.remote : null;
+}
+
+/**
  * baseURL에서 안전한 endpoint 레이블 생성
  * @param {string} baseURL
  * @returns {string|null}
