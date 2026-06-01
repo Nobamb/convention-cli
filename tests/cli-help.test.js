@@ -19,6 +19,7 @@ test('CLI help includes push option', () => {
   });
 
   assert.match(output, /--push/);
+  assert.match(output, /--set-upstream/);
   assert.match(output, /push/);
 });
 
@@ -54,7 +55,7 @@ test('CLI routes reset before commit and push flows', () => {
   const resetIndex = source.indexOf('if (options.reset)');
   const stepIndex = source.indexOf('if (options.step)');
   const batchIndex = source.indexOf('if (options.batch)');
-  const defaultCommitIndex = source.indexOf('runDefaultCommit({ push: options.push, ...runtime })');
+  const defaultCommitIndex = source.indexOf('runDefaultCommit({');
 
   assert.match(source, /import \{ runReset \} from "\.\.\/src\/commands\/reset\.js";/);
   assert.match(source, /runReset\(\{ \.\.\.runtime \}\)/);
@@ -67,7 +68,7 @@ test('CLI routes reset before commit and push flows', () => {
 test('CLI routes group option to grouped commit flow', () => {
   const source = fs.readFileSync('bin/convention.js', 'utf8');
   const groupIndex = source.indexOf('if (options.group)');
-  const defaultCommitIndex = source.indexOf('runDefaultCommit({ push: options.push, ...runtime })');
+  const defaultCommitIndex = source.indexOf('runDefaultCommit({');
 
   assert.match(source, /runGroupedCommit/);
   assert.notEqual(groupIndex, -1);
