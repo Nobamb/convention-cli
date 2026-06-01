@@ -57,6 +57,7 @@ test('CLI routes reset before commit and push flows', () => {
   const defaultCommitIndex = source.indexOf('runDefaultCommit({ push: options.push, ...runtime })');
 
   assert.match(source, /import \{ runReset \} from "\.\.\/src\/commands\/reset\.js";/);
+  assert.match(source, /runReset\(\{ \.\.\.runtime \}\)/);
   assert.notEqual(resetIndex, -1);
   assert.equal(resetIndex < stepIndex, true);
   assert.equal(resetIndex < batchIndex, true);
