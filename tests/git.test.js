@@ -13,8 +13,11 @@ import {
   getFileDiffs,
   getFullDiff,
   getCurrentHead,
+  getPushTargetStatus,
+  getRemotes,
   isGitRepository,
   push,
+  pushWithUpstream,
   resetToCommit,
 } from '../src/core/git.js';
 
@@ -531,6 +534,57 @@ test('push uses safe error output when no remote is configured', { skip: skipWit
     assert.equal(errors.some((message) => message.includes('fatal:')), false);
     assert.equal(errors.some((message) => message.includes('http')), false);
   });
+});
+
+test('getRemotes and getPushTargetStatus expose names without remote URLs', { skip: skipWithoutGit }, async () => {
+  await withRepo((repoDir) => {
+    runGit(repoDir, ['remote', 'add', 'origin', 'https://user:token@example.test/repo.git']);
+
+    const remotes = getRemotes();
+    const status = getPushTargetStatus();
+
+    assert.deepEqual(remotes, ['origin']);
+    assert.equal(status.branchName.length > 0, true);
+    assert.equal(status.upstreamName, '');
+    assert.deepEqual(status.remotes, ['origin']);
+    assert.equal(JSON.stringify(status).includes('token'), false);
+    assert.equal(JSON.stringify(status).includes('example.test'), false);
+  });
+});
+
+test('pushWithUpstream rejects unregistered remotes before running push', { skip: skipWithoutGit }, async () => {
+  await withRepo(() => {
+    assert.throws(
+      () => pushWithUpstream('missing', getPushTargetStatus().branchName),
+      /Remote is not registered/,
+    );
+  });
+});
+
+test('pushWithUpstream pushes current branch and sets upstream for registered remote', { skip: skipWithoutGit }, async () => {
+  const remoteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'convention-cli-git-remote-'));
+
+  try {
+    runGit(remoteDir, ['init', '--bare']);
+
+    await withRepo((repoDir) => {
+      runGit(repoDir, ['remote', 'add', 'origin', remoteDir]);
+      writeFile(repoDir, 'README.md', 'push with upstream change\n');
+      addFile('README.md');
+      commit('chore: push with upstream');
+
+      const { branchName } = getPushTargetStatus();
+      pushWithUpstream('origin', branchName);
+
+      const upstream = runGit(repoDir, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']).trim();
+      const remoteMessage = runGit(remoteDir, ['log', '-1', '--pretty=%s']).trim();
+
+      assert.match(upstream, /^origin\//);
+      assert.equal(remoteMessage, 'chore: push with upstream');
+    });
+  } finally {
+    cleanupTempRepo(remoteDir);
+  }
 });
 
 test('resetToCommit resets to a validated full hash and keeps changes in working tree', { skip: skipWithoutGit }, async () => {
