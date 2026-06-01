@@ -150,6 +150,19 @@ async function withRepoAndRemote(callback) {
   }
 }
 
+async function withRepoAndRemoteNoUpstream(callback) {
+  const remoteDir = createBareRemote();
+
+  try {
+    return await withRepo(async (repoDir) => {
+      runGit(repoDir, ['remote', 'add', 'origin', remoteDir]);
+      return callback(repoDir, remoteDir);
+    });
+  } finally {
+    cleanupTempRepo(remoteDir);
+  }
+}
+
 function saveRuntimeConfig(config = {}) {
   store.saveConfig({
     ...DEFAULT_CONFIG,
@@ -290,6 +303,69 @@ test('runBatchCommit keeps local commit but skips push when push confirmation is
 
     assert.equal(localMessages[0], 'chore: update project files');
     assert.equal(remoteMessages[0], 'chore: initial commit');
+  });
+});
+
+test('runBatchCommit lets interactive users set upstream from registered remotes', { skip: skipWithoutGit }, async () => {
+  await withRepoAndRemoteNoUpstream(async (repoDir, remoteDir) => {
+    saveRuntimeConfig({ mode: 'batch' });
+    writeFile(repoDir, 'README.md', 'interactive upstream push change\n');
+    prompts.inject([true, 'origin']);
+
+    await commands.runBatchCommit({ push: true });
+
+    const remoteMessages = getRemoteCommitMessages(remoteDir);
+    const upstream = runGit(repoDir, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']).trim();
+
+    assert.equal(remoteMessages[0], 'chore: update project files');
+    assert.match(upstream, /^origin\//);
+  });
+});
+
+test('runBatchCommit does not set upstream when interactive user cancels remote selection', { skip: skipWithoutGit }, async () => {
+  await withRepoAndRemoteNoUpstream(async (repoDir, remoteDir) => {
+    saveRuntimeConfig({ mode: 'batch' });
+    writeFile(repoDir, 'README.md', 'interactive upstream cancel change\n');
+    prompts.inject([true, null]);
+
+    await commands.runBatchCommit({ push: true });
+
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: update project files');
+    assert.throws(() => getRemoteCommitMessages(remoteDir));
+    assert.throws(() => runGit(repoDir, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']));
+  });
+});
+
+test('runBatchCommit does not auto-set upstream in non-interactive mode with only --yes', { skip: skipWithoutGit }, async () => {
+  await withRepoAndRemoteNoUpstream(async (repoDir, remoteDir) => {
+    saveRuntimeConfig({ mode: 'batch' });
+    writeFile(repoDir, 'README.md', 'non interactive upstream skipped change\n');
+
+    await commands.runBatchCommit({ push: true, interactive: false, yes: true });
+
+    assert.equal(getCommitMessages(repoDir)[0], 'chore: update project files');
+    assert.throws(() => getRemoteCommitMessages(remoteDir));
+    assert.throws(() => runGit(repoDir, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']));
+  });
+});
+
+test('runBatchCommit uses explicit setUpstream remote in non-interactive mode', { skip: skipWithoutGit }, async () => {
+  await withRepoAndRemoteNoUpstream(async (repoDir, remoteDir) => {
+    saveRuntimeConfig({ mode: 'batch' });
+    writeFile(repoDir, 'README.md', 'non interactive explicit upstream change\n');
+
+    await commands.runBatchCommit({
+      push: true,
+      interactive: false,
+      yes: true,
+      setUpstream: 'origin',
+    });
+
+    const remoteMessages = getRemoteCommitMessages(remoteDir);
+    const upstream = runGit(repoDir, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']).trim();
+
+    assert.equal(remoteMessages[0], 'chore: update project files');
+    assert.match(upstream, /^origin\//);
   });
 });
 
@@ -970,7 +1046,10 @@ test('runBatchCommit restores fallback config even when push fails after localLL
     });
     writeFile(repoDir, 'README.md', 'fallback push failure restore\n');
 
-    await assert.rejects(() => commands.runBatchCommit({ push: true }), /push/i);
+    await assert.rejects(
+      () => commands.runBatchCommit({ push: true, setUpstream: 'missing' }),
+      /Remote is not registered|push/i,
+    );
 
     assert.equal(requestBodies[0].model, 'high-reasoning-local');
     assert.equal(requestBodies[1].model, 'low-reasoning-local');
