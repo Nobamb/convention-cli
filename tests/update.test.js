@@ -350,7 +350,7 @@ test("AM CLI wires background update check only into PR and commit execution flo
   const agyMcpIndex = source.indexOf("if (options.agyMcp)");
   const resetIndex = source.indexOf("if (options.reset)");
   const prIndex = source.indexOf("if (options.pr)");
-  const defaultCommitIndex = source.indexOf("runDefaultCommit({ push: options.push, ...runtime })");
+  const defaultCommitIndex = source.indexOf("runDefaultCommit({");
   const updateFunctionIndex = source.indexOf("async function runBackgroundUpdateCheck()");
 
   // update check helper가 존재하고, 설정 명령과 reset 분기가 끝난 뒤 실행 명령 흐름에서만 호출되는지 확인합니다.
