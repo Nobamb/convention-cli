@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import readline from "node:readline";
 import { addFile, getChangedFiles, getFileDiffs, commit } from "../core/git.js";
 import { maskSensitiveDiff } from "../core/security.js";
@@ -24,11 +25,95 @@ export const deps = {
   buildCommitPrompt,
 };
 
+/**
+ * MCP 호스트가 전달한 파일 경로와 Git이 반환한 파일 경로를 같은 기준으로 비교하기 위해 정규화합니다.
+ *
+ * Windows 환경에서는 호스트나 테스트가 역슬래시(`\`)를 넘길 수 있지만 Git porcelain 출력과 diff pathspec은
+ * 일반적으로 슬래시(`/`)를 사용합니다. 비교 기준만 맞추기 위한 함수이며, 실제 Git 명령에 넘길 값은
+ * `getChangedFiles()`에서 확인된 원본 경로를 사용합니다.
+ *
+ * @param {string} file - MCP 호스트가 전달했거나 Git이 반환한 파일 경로입니다.
+ * @returns {string} 슬래시 기준으로 정규화된 파일 경로입니다.
+ */
+function normalizeMcpFilePath(file) {
+  return file.replaceAll("\\", "/");
+}
+
+/**
+ * MCP 호스트가 넘긴 `files` 항목이 안전한 저장소 내부 상대 경로인지 검사합니다.
+ *
+ * Git은 `--` 뒤의 인자도 단순 literal path로만 처리하지 않고 `:(glob)**` 같은 pathspec magic을 해석합니다.
+ * MCP 호스트는 신뢰 경계 밖 입력이므로 pathspec magic, glob 패턴, 절대 경로, 상위 디렉터리 이동을 모두
+ * 거부해야 민감 파일 제외 정책이 우회되지 않습니다.
+ *
+ * @param {unknown} file - MCP `execute_git_commit`의 `files` 배열에서 전달된 단일 항목입니다.
+ * @returns {boolean} 안전한 상대 파일 경로로 볼 수 있으면 true, Git pathspec 또는 범위 확장 위험이 있으면 false입니다.
+ */
+function isSafeMcpRequestedFile(file) {
+  if (typeof file !== "string" || file.length === 0 || file !== file.trim()) {
+    return false;
+  }
+
+  if (file.includes("\0")) {
+    return false;
+  }
+
+  const normalized = normalizeMcpFilePath(file);
+
+  return (
+    !normalized.startsWith(":") &&
+    !normalized.startsWith("/") &&
+    !path.isAbsolute(file) &&
+    !/[?*[\]]/u.test(normalized) &&
+    !normalized.split("/").includes("..")
+  );
+}
+
+/**
+ * MCP 호스트가 특정 파일 목록을 요청했을 때 실제 변경 파일 목록과 교집합을 계산합니다.
+ *
+ * 외부 입력인 `requestedFiles`를 그대로 Git pathspec으로 넘기면 `:(glob)**` 같은 magic pathspec으로
+ * `.env` 등 민감 파일 제외 정책을 우회할 수 있습니다. 따라서 먼저 `getChangedFiles()`가 반환한 실제 변경
+ * 파일 목록을 기준 목록으로 삼고, MCP가 요청한 값은 안전한 상대 경로인지 확인한 뒤 정확히 일치하는 항목만
+ * 커밋 후보로 사용합니다.
+ *
+ * @param {string[]} requestedFiles - MCP 호스트가 커밋 대상으로 요청한 파일 목록입니다.
+ * @param {string[]} changedFiles - Git porcelain에서 확인한 실제 변경 파일 목록입니다.
+ * @returns {string[]} 실제 변경 파일 중 MCP 요청과 안전하게 매칭된 파일 목록입니다.
+ */
+function resolveRequestedFiles(requestedFiles, changedFiles) {
+  const changedFileByNormalizedPath = new Map(
+    changedFiles.map((file) => [normalizeMcpFilePath(file), file]),
+  );
+  const resolvedFiles = [];
+
+  for (const requestedFile of requestedFiles) {
+    if (!isSafeMcpRequestedFile(requestedFile)) {
+      throw new Error("MCP files argument contains an unsafe file path.");
+    }
+
+    const matchedFile = changedFileByNormalizedPath.get(
+      normalizeMcpFilePath(requestedFile),
+    );
+
+    if (!matchedFile) {
+      throw new Error("MCP files argument contains a file that is not changed.");
+    }
+
+    if (!resolvedFiles.includes(matchedFile)) {
+      resolvedFiles.push(matchedFile);
+    }
+  }
+
+  return resolvedFiles;
+}
+
 function resolveCommittableFiles(requestedFiles) {
+  const changedFiles = deps.getChangedFiles();
   const candidateFiles =
     Array.isArray(requestedFiles) && requestedFiles.length > 0
-      ? requestedFiles
-      : deps.getChangedFiles();
+      ? resolveRequestedFiles(requestedFiles, changedFiles)
+      : changedFiles;
   const fileDiffs = deps.getFileDiffs(candidateFiles);
 
   return fileDiffs.map(({ file }) => file);
