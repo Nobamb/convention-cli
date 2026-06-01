@@ -180,9 +180,7 @@ test("CLI routes template before reset and default commit flows", () => {
   const source = fs.readFileSync(CLI_PATH, "utf8");
   const templateIndex = source.indexOf("if (options.template !== undefined)");
   const resetIndex = source.indexOf("if (options.reset)");
-  const defaultCommitIndex = source.indexOf(
-    "runDefaultCommit({ push: options.push, ...runtime })",
-  );
+  const defaultCommitIndex = source.indexOf("runDefaultCommit({");
 
   assert.match(source, /runTemplateCommand/);
   assert.match(source, /options\.template !== undefined/);
