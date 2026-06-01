@@ -138,6 +138,44 @@ test('runReset does not reset when user rejects confirmation', { skip: skipWitho
   });
 });
 
+test('runReset does not prompt or reset in non-interactive runtime', { skip: skipWithoutGit }, async () => {
+  await withRepo(async (repoDir) => {
+    saveConventionState(repoDir);
+    // non-interactive 모드에서는 confirmAction()을 호출하면 안 됩니다.
+    // true/false를 함께 주입해 첫 번째 값이 남아 있는지 확인하고, 남은 값을 테스트 안에서 소비해 다음 테스트에 영향을 주지 않게 합니다.
+    prompts.inject([true, false]);
+
+    await runReset({
+      interactive: false,
+      yes: true,
+      isCI: true,
+      isGitHubActions: true,
+    });
+
+    // runReset()이 confirmAction()을 호출하지 않았다면 첫 번째 주입값 true가 그대로 남아 있어야 합니다.
+    const firstInjectedResponse = await prompts({
+      type: 'confirm',
+      name: 'confirmed',
+      message: 'consume first injected value after non-interactive reset',
+      initial: false,
+    });
+    assert.equal(firstInjectedResponse.confirmed, true);
+
+    // 두 번째 주입값까지 소비해 prompts.inject 큐가 뒤따르는 reset 테스트에 영향을 주지 않게 정리합니다.
+    await prompts({
+      type: 'confirm',
+      name: 'confirmed',
+      message: 'consume second injected value after non-interactive reset',
+      initial: false,
+    });
+
+    // --yes가 함께 전달되더라도 reset 자동 승인으로 해석하면 안 되므로 마지막 commit은 그대로 유지되어야 합니다.
+    assert.equal(getLastCommitMessage(repoDir), 'chore: second commit');
+    // reset이 실행되지 않았으므로 working tree도 clean 상태여야 합니다.
+    assert.equal(getStatus(repoDir), '');
+  });
+});
+
 test('runReset does not reset when confirmation prompt is canceled', { skip: skipWithoutGit }, async () => {
   await withRepo(async (repoDir) => {
     saveConventionState(repoDir);
