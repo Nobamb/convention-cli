@@ -50,7 +50,7 @@ function runGit(args) {
  *
  * @returns {string} - 현재 브랜치 이름
  */
-function getCurrentBranchName() {
+export function getCurrentBranchName() {
   try {
     return execFileSync("git", ["branch", "--show-current"], {
       ...GIT_COMMAND_OPTIONS,
@@ -69,7 +69,7 @@ function getCurrentBranchName() {
  *
  * @returns {string} - 현재 브랜치에 설정된 upstream 이름
  */
-function getCurrentUpstreamName() {
+export function getCurrentUpstreamName() {
   try {
     return execFileSync(
       "git",
@@ -104,6 +104,79 @@ function buildPushFailureMessage(branchName, upstreamName) {
 
   // 원격 저장소 URL과 인증 정보는 숨김 처리한 채로 git push 실패 시 표시할 메시지를 반환
   return `Failed to push ${branchLabel}. ${upstreamHint} Remote URL and authentication details were hidden.`;
+}
+
+/**
+ * 현재 저장소에 등록된 remote 이름만 반환합니다.
+ *
+ * remote URL은 인증 토큰이나 사용자명이 포함될 수 있으므로 조회하지 않습니다. `git remote`가
+ * 반환한 이름만 push 대상 선택과 검증에 사용합니다.
+ *
+ * @returns {string[]} 등록된 remote 이름 목록
+ */
+export function getRemotes() {
+  try {
+    const output = execFileSync("git", ["remote"], {
+      ...GIT_COMMAND_OPTIONS,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+
+    return output.split(/\r?\n/u).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * push UX 판단에 필요한 Git 상태만 안전하게 모읍니다.
+ *
+ * branch/upstream/remote 이름은 Git이 반환한 값만 사용하고, remote URL이나 stderr는 노출하지 않습니다.
+ * command 계층은 이 값을 보고 일반 push, upstream 설정 push, 또는 안전 중단을 결정합니다.
+ *
+ * @returns {{branchName: string, upstreamName: string, remotes: string[]}} push 대상 상태
+ */
+export function getPushTargetStatus() {
+  return {
+    branchName: getCurrentBranchName(),
+    upstreamName: getCurrentUpstreamName(),
+    remotes: getRemotes(),
+  };
+}
+
+/**
+ * 등록된 remote에 현재 branch의 upstream을 설정하며 push합니다.
+ *
+ * remote 이름은 반드시 `git remote` 결과에 포함되어야 합니다. branch 이름은 사용자 입력을 받지 않고
+ * 현재 Git 상태에서 감지한 값만 전달받아 detached HEAD나 빈 branch 상태에서 자동 upstream 설정을 막습니다.
+ *
+ * @param {string} remoteName 등록된 remote 이름
+ * @param {string} branchName 현재 branch 이름
+ * @returns {void}
+ */
+export function pushWithUpstream(remoteName, branchName) {
+  const remotes = getRemotes();
+
+  if (!remotes.includes(remoteName)) {
+    throw new Error("Remote is not registered.");
+  }
+
+  if (typeof branchName !== "string" || branchName.trim().length === 0) {
+    throw new Error("Current branch name could not be detected.");
+  }
+
+  try {
+    runGit(["push", "-u", remoteName, branchName]);
+    logSuccess(
+      `Pushed branch ${branchName} and set upstream to ${remoteName}/${branchName}.`,
+    );
+  } catch {
+    const message = buildPushFailureMessage(
+      branchName,
+      `${remoteName}/${branchName}`,
+    );
+    logError(message);
+    throw new Error(message);
+  }
 }
 
 // diff를 AI prompt로 보내기 전에 제외해야 하는 민감 파일명 후보입니다.
