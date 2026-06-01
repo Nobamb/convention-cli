@@ -29,12 +29,20 @@ ${chalk.yellow('Options:')}
   --no-interactive  CI/자동화 환경에서 사용자 입력 prompt를 띄우지 않습니다. 필요한 승인 값이 없으면 안전하게 중단합니다.
   --draft           GitHub PR을 draft(초안) 상태로 생성합니다. (--pr 전용)
   -am, --agy-mcp    로컬 MCP(Model Context Protocol) 서버 모드로 기동합니다. (Antigravity 연동 및 연동 활성화 환경 변수 선언 필요)
+  -iam, --install-agy-mcp
+                    Antigravity mcp_config.json에 convention-cli MCP 서버 설정을 생성하거나 갱신합니다.
+  -uam, --uninstall-agy-mcp
+                    Antigravity mcp_config.json에서 convention-cli MCP 서버 설정만 제거합니다.
+  -tg, --target <target>
+                    Antigravity MCP 설정 대상 profile을 지정합니다. (editor, cli, ide, gemini / -iam 또는 -uam 전용)
+  -pv, --preview    Antigravity MCP 설정 변경 내용을 실제 파일 쓰기 없이 미리 보여줍니다. (-iam 또는 -uam 전용)
   --help, -h        도움말을 출력합니다.
   --version, -v     버전을 출력합니다.
 
 ${chalk.grey('※ PR 자동화 기능(--pr)은 로컬에 gh CLI가 설치되어 있고 로그인(gh auth login)이 완료된 상태여야 원격 PR 생성이 가능합니다.')}
 ${chalk.grey('※ CI/GitHub Actions에서는 --no-interactive를 사용하고, 실제 commit 또는 PR 생성까지 승인할 때만 --yes를 함께 사용하세요.')}
 ${chalk.grey('※ Antigravity MCP 구동 시에는 CONVENTION_EXPERIMENTAL_ANTIGRAVITY=true 환경 변수를 선언해야 합니다.')}
+${chalk.grey('※ Antigravity MCP 설정은 convention -iam -tg cli -pv로 미리 확인한 뒤 convention -iam -tg cli로 설치할 수 있습니다.')}
 
 ${chalk.grey('더 자세한 내용은 README.md를 참고하거나 convention-cli 저장소를 방문해주세요.')}
 `;
