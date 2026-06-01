@@ -18,6 +18,10 @@ import { runModelSetup } from "../src/commands/model.js";
 import { runPrCommand } from "../src/commands/pr.js";
 import { runReset } from "../src/commands/reset.js";
 import { runTemplateCommand } from "../src/commands/template.js";
+import {
+  runAgyMcpInstall,
+  runAgyMcpUninstall,
+} from "../src/commands/agyMcpInstall.js";
 import { loadConfig, saveConfig } from "../src/config/store.js";
 import { runUpdateCheckIfNeeded } from "../src/core/update.js";
 import { getCurrentVersion } from "../src/core/version.js";
@@ -141,6 +145,26 @@ program.option(
   "로컬 MCP(Model Context Protocol) 서버 모드로 기동합니다. Antigravity MCP 연동에 사용됩니다.",
 );
 
+program.option(
+  "-iam, --install-agy-mcp",
+  "Antigravity가 convention-cli MCP 서버를 실행할 수 있도록 mcp_config.json 설정을 생성하거나 갱신합니다.",
+);
+
+program.option(
+  "-uam, --uninstall-agy-mcp",
+  "Antigravity mcp_config.json에서 convention-cli MCP 서버 설정만 제거합니다.",
+);
+
+program.option(
+  "-tg, --target <target>",
+  "Antigravity MCP 설정 대상 profile을 지정합니다. 사용 가능 값: editor, cli, ide, gemini",
+);
+
+program.option(
+  "-pv, --preview",
+  "Antigravity MCP 설정 변경 내용을 실제 파일 쓰기 없이 미리 보여줍니다.",
+);
+
 program.parse(process.argv);
 
 // 옵션 가져오기
@@ -196,6 +220,12 @@ async function main() {
     options.setMode !== undefined ||
     options.language !== undefined;
 
+  // Antigravity MCP 설정 파일을 생성/갱신/제거하는 설치 명령 여부입니다.
+  // -am/--agy-mcp 서버 모드와 다르게 사용자 터미널에서 실행하는 설정 작업이므로 별도 그룹으로 분리합니다.
+  const hasAgyMcpSetupOption =
+    options.installAgyMcp !== undefined ||
+    options.uninstallAgyMcp !== undefined;
+
   // 실행 옵션 명시 여부
   const hasExecutionOption =
     options.step !== undefined ||
@@ -205,6 +235,9 @@ async function main() {
     options.pr !== undefined ||
     options.push !== undefined ||
     options.agyMcp !== undefined;
+  // Antigravity MCP 설치/제거 명령에만 의미가 있는 보조 옵션 목록입니다.
+  const hasAgyMcpSetupModifier =
+    options.target !== undefined || options.preview !== undefined;
   // 설정 명령과 함께 쓰면 의미가 모호한 런타임 제어 옵션입니다.
   const hasRuntimeModifier =
     options.yes !== undefined || options.noInteractive !== undefined;
@@ -215,6 +248,29 @@ async function main() {
     options.remote !== undefined ||
     options.printOnly !== undefined ||
     options.draft !== undefined;
+
+  // Antigravity MCP 설치와 제거는 같은 파일의 같은 서버 엔트리를 반대로 조작하므로 동시에 실행할 수 없습니다.
+  if (options.installAgyMcp && options.uninstallAgyMcp) {
+    throw new Error(
+      "상호 배타적인 옵션 조합입니다: --install-agy-mcp/-iam과 --uninstall-agy-mcp/-uam은 함께 사용할 수 없습니다.",
+    );
+  }
+
+  // --target/-tg, --preview/-pv는 Antigravity MCP 설정 작업의 보조 옵션입니다.
+  // 단독으로 들어오면 commit flow가 의도치 않게 시작될 수 있으므로 명확히 중단합니다.
+  if (!hasAgyMcpSetupOption && hasAgyMcpSetupModifier) {
+    throw new Error(
+      "--target/-tg, --preview/-pv 옵션은 --install-agy-mcp/-iam 또는 --uninstall-agy-mcp/-uam과 함께 사용해야 합니다.",
+    );
+  }
+
+  // Antigravity MCP 설치/제거 명령은 설정 파일 CRUD 전용입니다.
+  // commit 생성, PR 생성, reset, provider/template 설정과 섞이면 작업 의도가 모호하고 파일 쓰기 범위가 커지므로 차단합니다.
+  if (hasAgyMcpSetupOption && (hasConfigOption || hasExecutionOption || hasPrModifier)) {
+    throw new Error(
+      "상호 배타적인 옵션 조합입니다: Antigravity MCP 설치/제거 명령은 commit/PR/reset/model/template 설정 옵션과 함께 사용할 수 없습니다.",
+    );
+  }
 
   // 1. 설정 옵션과 실행 옵션 혼합 사용 시 에러 발생
   if (hasConfigOption && (hasExecutionOption || hasRuntimeModifier)) {
@@ -332,6 +388,30 @@ async function main() {
   }
 
   // 4. 실행 로직 처리
+  // Antigravity MCP 설치/제거는 mcp_config.json 파일만 다루는 독립 설정 작업입니다.
+  // preview 모드에서는 실제 파일 쓰기가 일어나지 않고, --yes는 파일 쓰기 confirm에만 사용됩니다.
+  if (options.installAgyMcp) {
+    await runAgyMcpInstall({
+      target: options.target,
+      preview: options.preview === true,
+      yes: runtime.yes,
+      noInteractive: runtime.noInteractive,
+      interactive: runtime.interactive,
+    });
+    return;
+  }
+
+  if (options.uninstallAgyMcp) {
+    await runAgyMcpUninstall({
+      target: options.target,
+      preview: options.preview === true,
+      yes: runtime.yes,
+      noInteractive: runtime.noInteractive,
+      interactive: runtime.interactive,
+    });
+    return;
+  }
+
   // -am, --agy-mcp 옵션은 로컬 MCP 서버로 구동되어 JSON-RPC stdio를 통해 Antigravity와 통신하는 독립 실행 모드입니다.
   if (options.agyMcp) {
     if (process.env.CONVENTION_EXPERIMENTAL_ANTIGRAVITY !== "true") {
