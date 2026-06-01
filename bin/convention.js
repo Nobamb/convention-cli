@@ -347,7 +347,9 @@ async function main() {
 
   // --reset은 커밋 취소 작업이므로, commit/push 흐름과 완전히 분리되어 먼저 처리됩니다.
   if (options.reset) {
-    await runReset();
+    // reset도 CI 감지와 --no-interactive 정책을 따라야 하므로 runtime을 전달합니다.
+    // runReset() 내부에서는 Git 히스토리 이동 작업의 안전성을 위해 --yes를 자동 승인으로 사용하지 않습니다.
+    await runReset({ ...runtime });
     return;
   }
 
