@@ -199,12 +199,32 @@ To use GitHub Copilot as the AI provider:
 
 **Convention CLI** can be run as a local MCP (Model Context Protocol) Stdio server. This enables Gemini, Grok, or Google's **Antigravity** agent host to communicate with your local repository using standard JSON-RPC protocol over Stdio without exposing sensitive credentials, creating an **"Inversion of Authentication"** architecture.
 
-1. **Find your local paths**:
-   - Project path: the absolute path to this repository, for example `C:\Users\USER\Desktop\develop\convention-cli`.
-   - Node path: use an absolute `node.exe` path on Windows, for example `C:\Program Files\nodejs\node.exe`. GUI apps do not always inherit the terminal `PATH`.
+1. **Install or preview the MCP config automatically**:
 
-2. **Create the Antigravity MCP config file**:
-   Antigravity reads MCP settings from `mcp_config.json`, not from arbitrary `mcp.json` or `config.json` files. Use the profile that matches your host:
+   ```bash
+   # Preview the file and action without writing anything
+   convention -iam -tg cli -pv
+
+   # Create or update the Antigravity CLI profile
+   convention -iam -tg cli
+
+   # Remove only the convention-cli MCP server entry
+   convention -uam -tg cli
+   ```
+
+   Target profiles:
+
+   ```text
+   editor -> ~/.gemini/antigravity/mcp_config.json
+   cli    -> ~/.gemini/antigravity-cli/mcp_config.json
+   ide    -> ~/.gemini/antigravity-ide/mcp_config.json
+   gemini -> ~/.gemini/config/mcp_config.json
+   ```
+
+   `--install-agy-mcp` / `-iam` creates or updates only `mcpServers["convention-cli-mcp"]`. It preserves other MCP servers and asks before writing unless you explicitly pass `--yes`. `--preview` / `-pv` never writes files, even when combined with `--yes`.
+
+2. **Manual fallback**:
+   Antigravity reads MCP settings from `mcp_config.json`, not from arbitrary `mcp.json` or `config.json` files. If automatic installation is not suitable, use the profile that matches your host:
    - Antigravity Editor: `%USERPROFILE%\.gemini\antigravity\mcp_config.json`
    - Antigravity CLI: `%USERPROFILE%\.gemini\antigravity-cli\mcp_config.json`
    - Antigravity IDE profile, if present: `%USERPROFILE%\.gemini\antigravity-ide\mcp_config.json`
@@ -230,7 +250,7 @@ To use GitHub Copilot as the AI provider:
 
    Replace the example paths with your own absolute paths. `cwd` is important because the MCP server runs Git commands against the current working directory.
 
-3. **Save JSON as UTF-8 without BOM on Windows**:
+3. **Save JSON as UTF-8 without BOM on Windows when editing manually**:
    Some Antigravity builds reject a UTF-8 BOM with errors such as `invalid character 'ï' looking for beginning of value`. In VS Code, use **Save with Encoding > UTF-8**. In PowerShell, prefer a no-BOM writer when generating the file.
 
 4. **Restart Antigravity**:
@@ -373,12 +393,32 @@ GitHub Copilot을 AI 프로바이더로 사용하기 위한 절차는 다음과 
 
 **Convention CLI**는 로컬 **Model Context Protocol (MCP)** Stdio 서버 모드를 완벽하게 지원합니다. 독점 에이전트 인프라(Grok Build, Antigravity 등)가 API Key를 직접 가로채지 않고, Stdio 파이프라인을 통해 귀하의 로컬 Git 저장소 변경 사항을 안전하게 조회하고 최종 커밋을 자율 실행할 수 있도록 하는 **"인증의 주체 반전"** 아키텍처를 가동합니다.
 
-1. **로컬 경로 확인**:
-   - 프로젝트 경로: 이 저장소의 절대 경로입니다. 예: `C:\Users\USER\Desktop\develop\convention-cli`
-   - Node 경로: Windows에서는 `node` 대신 `C:\Program Files\nodejs\node.exe`처럼 절대 경로를 권장합니다. GUI 앱은 터미널의 `PATH`를 그대로 상속하지 않을 수 있습니다.
+1. **MCP 설정 자동 설치 또는 미리보기**:
 
-2. **Antigravity MCP 설정 파일 생성**:
-   Antigravity는 임의의 `mcp.json`이나 `config.json`이 아니라 `mcp_config.json`을 읽습니다. 사용하는 호스트에 맞춰 아래 위치에 파일을 만듭니다.
+   ```bash
+   # 실제 파일 쓰기 없이 대상 파일과 작업 종류만 확인
+   convention -iam -tg cli -pv
+
+   # Antigravity CLI profile에 convention-cli MCP 서버 설정 생성 또는 갱신
+   convention -iam -tg cli
+
+   # convention-cli MCP 서버 설정만 제거
+   convention -uam -tg cli
+   ```
+
+   target profile:
+
+   ```text
+   editor -> ~/.gemini/antigravity/mcp_config.json
+   cli    -> ~/.gemini/antigravity-cli/mcp_config.json
+   ide    -> ~/.gemini/antigravity-ide/mcp_config.json
+   gemini -> ~/.gemini/config/mcp_config.json
+   ```
+
+   `--install-agy-mcp` / `-iam`은 `mcpServers["convention-cli-mcp"]`만 생성하거나 갱신합니다. 다른 MCP 서버 설정은 보존하며, `--yes`를 명시하지 않으면 파일 쓰기 전 사용자 확인을 받습니다. `--preview` / `-pv`는 `--yes`와 함께 사용해도 실제 파일을 쓰지 않습니다.
+
+2. **수동 설정 fallback**:
+   Antigravity는 임의의 `mcp.json`이나 `config.json`이 아니라 `mcp_config.json`을 읽습니다. 자동 설치를 쓰기 어려운 경우 사용하는 호스트에 맞춰 아래 위치에 파일을 만듭니다.
    - Antigravity Editor: `%USERPROFILE%\.gemini\antigravity\mcp_config.json`
    - Antigravity CLI: `%USERPROFILE%\.gemini\antigravity-cli\mcp_config.json`
    - Antigravity IDE 프로필이 있는 경우: `%USERPROFILE%\.gemini\antigravity-ide\mcp_config.json`
@@ -404,7 +444,7 @@ GitHub Copilot을 AI 프로바이더로 사용하기 위한 절차는 다음과 
 
    예시 경로는 본인 환경의 절대 경로로 바꿔야 합니다. `cwd`는 매우 중요합니다. 이 값이 없으면 MCP 서버가 Antigravity 실행 폴더에서 떠서 Git 저장소를 찾지 못할 수 있습니다.
 
-3. **Windows에서는 UTF-8 BOM 없이 저장**:
+3. **수동 편집 시 Windows에서는 UTF-8 BOM 없이 저장**:
    일부 Antigravity 빌드는 UTF-8 BOM이 붙은 JSON을 `invalid character 'ï' looking for beginning of value` 오류로 거부할 수 있습니다. VS Code에서는 **Save with Encoding > UTF-8**로 저장하고, PowerShell로 생성할 때는 BOM 없는 UTF-8 writer를 사용합니다.
 
 4. **Antigravity 재시작**:
