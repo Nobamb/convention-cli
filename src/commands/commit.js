@@ -14,7 +14,9 @@ import {
   getFileDiffs,
   isGitRepository,
   getCurrentHead,
+  getPushTargetStatus,
   push,
+  pushWithUpstream,
 } from "../core/git.js";
 import { maskSensitiveDiff } from "../core/security.js";
 import {
@@ -39,6 +41,7 @@ import {
   selectLocalLLMFallbackPolicy,
   selectLocalLLMFailureAction,
   selectPostFallbackConfigAction,
+  selectUpstreamRemote,
 } from "../utils/ui.js";
 import { isValidMode } from "../utils/validator.js";
 
@@ -857,10 +860,16 @@ async function pushAfterSuccessfulCommit(options = {}) {
     return;
   }
 
-  let approved = false;
+  const { branchName, upstreamName, remotes } = getPushTargetStatus();
+  const setUpstreamRemote =
+    typeof options.setUpstream === "string" &&
+    options.setUpstream.trim().length > 0
+      ? options.setUpstream.trim()
+      : null;
 
   // push 확인은 commit message 확인과 별개입니다. confirmBeforeCommit=false는 커밋 확인만 생략하는 설정이므로,
   // 원격 히스토리를 바꾸는 push는 별도 승인 정책을 유지합니다.
+  let approved = false;
   if (options.interactive === false) {
     // 비대화형 모드에서는 prompt를 띄우지 않고, --yes가 있을 때만 push까지 명시 승인된 것으로 봅니다.
     approved = options.yes === true;
@@ -877,9 +886,46 @@ async function pushAfterSuccessfulCommit(options = {}) {
     return;
   }
 
+  if (upstreamName) {
+    // upstream이 이미 있으면 기존 git push 동작을 유지합니다.
+    // 이 경로에서는 새 remote branch를 만들거나 로컬 .git/config의 upstream 설정을 바꾸지 않습니다.
+    push();
+    return;
+  }
+
+  if (!branchName) {
+    warn(
+      "현재 branch 이름을 확인할 수 없어 push를 중단합니다. detached HEAD 상태에서는 upstream을 자동 설정하지 않습니다.",
+    );
+    return;
+  }
+
+  if (setUpstreamRemote) {
+    // --set-upstream은 upstream이 없는 branch에서만 사용하는 명시 옵션입니다.
+    // remote 이름은 core wrapper가 `git remote` 결과와 다시 비교하므로 등록되지 않은 값은 push 전에 차단됩니다.
+    pushWithUpstream(setUpstreamRemote, branchName);
+    return;
+  }
+
+  if (options.interactive === false) {
+    warn(
+      "upstream이 없어 push를 진행하지 않았습니다. 비대화형 모드에서는 --yes만으로 upstream을 자동 설정하지 않습니다. 필요하면 --push --yes --set-upstream <remote>를 사용해 주세요.",
+    );
+    return;
+  }
+
+  const selectedRemote = await selectUpstreamRemote({ branchName, remotes });
+
+  if (!selectedRemote) {
+    warn(
+      "push를 취소했습니다. 로컬 커밋은 유지되고 원격 저장소와 upstream 설정은 변경되지 않았습니다.",
+    );
+    return;
+  }
+
   // 실제 push는 core wrapper에 위임합니다. wrapper는 Git stderr를 그대로 노출하지 않아
   // remote URL, token, credential helper 출력 같은 민감 정보가 사용자 메시지에 섞이지 않게 합니다.
-  push();
+  pushWithUpstream(selectedRemote, branchName);
 }
 
 // 단계별 기본 fallback 의도들
@@ -1376,6 +1422,7 @@ export async function runStepCommit(options = {}) {
       push: options.push && committedCount > 0,
       yes: options.yes,
       interactive: options.interactive,
+      setUpstream: options.setUpstream,
     });
 
     // 커밋 개수가 0이면 안내 메시지 출력
@@ -1620,6 +1667,7 @@ export async function runGroupedCommit(options = {}) {
       push: options.push && committedCount > 0,
       yes: options.yes,
       interactive: options.interactive,
+      setUpstream: options.setUpstream,
     });
 
     // commit count가 없다면 사용자에게 커밋이 없음을 알림
