@@ -243,3 +243,101 @@ test("MCP Server - invalid method에 대해 규격에 정의된 Method Not Found
   assert.equal(response.error.code, -32601);
   assert.match(response.error.message, /Method not found/);
 });
+
+test("MCP Server - execute_git_commit files 인자의 Git pathspec magic을 거부하는가", async () => {
+  const { fakeStdin } = setupMockEnv();
+
+  let didCommit = false;
+  const stagedFiles = [];
+
+  // 실제 변경 파일 목록에 tracked .env가 있더라도, MCP 호스트가 넘긴 files 값은 먼저 안전한 상대 경로인지 검증해야 합니다.
+  // `:(glob)**`는 Git에서 모든 파일을 매칭할 수 있는 pathspec magic이므로 일반 파일명처럼 취급하면 안 됩니다.
+  deps.getChangedFiles = () => [".env", "src/index.js"];
+  deps.getFileDiffs = () => {
+    throw new Error("getFileDiffs must not receive unsafe pathspec input.");
+  };
+  deps.addFile = (file) => {
+    stagedFiles.push(file);
+  };
+  deps.commit = () => {
+    didCommit = true;
+  };
+
+  deps.loadConfig = () => ({
+    confirmBeforeCommit: false,
+  });
+
+  await runMCPServer();
+
+  fakeStdin.emit("data", JSON.stringify({
+    jsonrpc: "2.0",
+    id: 6,
+    method: "tools/call",
+    params: {
+      name: "execute_git_commit",
+      arguments: {
+        message: "fix: reject unsafe mcp pathspec",
+        files: [":(glob)**"],
+      },
+    },
+  }) + "\n");
+
+  assert.equal(stdoutLines.length, 1);
+  const response = JSON.parse(stdoutLines[0].trim());
+
+  assert.match(
+    response.result.content[0].text,
+    /MCP files argument contains an unsafe file path/,
+  );
+  assert.deepEqual(stagedFiles, []);
+  assert.equal(didCommit, false);
+});
+
+test("MCP Server - execute_git_commit files 인자는 실제 변경 파일과 교집합만 커밋하는가", async () => {
+  const { fakeStdin } = setupMockEnv();
+
+  let getFileDiffsInput = null;
+  let committedFiles = null;
+  const stagedFiles = [];
+
+  // MCP 호스트가 안전한 파일명을 넘겨도, Git이 실제 변경 파일로 보고한 항목과 일치하는 값만 커밋 후보로 사용합니다.
+  // 이 교집합 처리가 있어야 호스트가 임의 경로나 변경되지 않은 파일을 커밋 범위에 끼워 넣을 수 없습니다.
+  deps.getChangedFiles = () => ["src/index.js", "README.md"];
+  deps.getFileDiffs = (files) => {
+    getFileDiffsInput = files;
+    return [{ file: "src/index.js", diff: "+ console.log('safe');" }];
+  };
+  deps.addFile = (file) => {
+    stagedFiles.push(file);
+  };
+  deps.commit = (msg, files) => {
+    committedFiles = files;
+  };
+
+  deps.loadConfig = () => ({
+    confirmBeforeCommit: false,
+  });
+
+  await runMCPServer();
+
+  fakeStdin.emit("data", JSON.stringify({
+    jsonrpc: "2.0",
+    id: 7,
+    method: "tools/call",
+    params: {
+      name: "execute_git_commit",
+      arguments: {
+        message: "fix: commit requested changed file",
+        files: ["src/index.js"],
+      },
+    },
+  }) + "\n");
+
+  assert.equal(stdoutLines.length, 1);
+  const response = JSON.parse(stdoutLines[0].trim());
+
+  assert.equal(response.result.content[0].text, "Commit completed successfully.");
+  assert.deepEqual(getFileDiffsInput, ["src/index.js"]);
+  assert.deepEqual(stagedFiles, ["src/index.js"]);
+  assert.deepEqual(committedFiles, ["src/index.js"]);
+});
