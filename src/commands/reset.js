@@ -117,9 +117,18 @@ function validateResetTransactionGraph(transaction) {
  * commit flow가 `.git/convention/last-run.json`에 저장한 beforeHead/afterHead를 검증하고,
  * 현재 HEAD가 afterHead와 정확히 일치할 때만 beforeHead로 mixed reset합니다.
  *
- * @returns {Promise<void>} - reset command flow
+ * @param {object} [runtime] - CLI 진입점에서 계산한 실행 환경 옵션입니다. CI 여부와 대화형 입력 가능 여부를 command 계층에 전달하는 역할을 합니다.
+ * @param {boolean} [runtime.interactive=true] - 사용자 입력 prompt를 띄울 수 있는 실행인지 나타냅니다. `false`이면 reset 확인 prompt를 호출하지 않고 안전하게 중단합니다.
+ * @param {boolean} [runtime.yes=false] - 다른 command에서는 명시 승인으로 쓰일 수 있지만, reset은 Git 히스토리를 이동하는 작업이므로 자동 승인 용도로 사용하지 않습니다.
+ * @param {boolean} [runtime.isCI=false] - 현재 실행 환경이 일반 CI인지 나타내는 값입니다. reset 중단 메시지가 자동화 환경에서 발생한 이유를 이해하는 데 필요한 실행 문맥입니다.
+ * @param {boolean} [runtime.isGitHubActions=false] - 현재 실행 환경이 GitHub Actions인지 나타내는 값입니다. GitHub Actions에서도 reset은 대화형 확인 없이 실행하지 않습니다.
+ * @returns {Promise<void>} - reset command flow가 완료되면 값을 반환하지 않습니다. 안전 조건을 만족하지 못하면 Git 상태를 변경하지 않고 조기 종료합니다.
  */
-export async function runReset() {
+export async function runReset(runtime = {}) {
+  // runtime.interactive는 CLI의 --no-interactive 옵션 또는 CI/GitHub Actions 감지 결과를 반영합니다.
+  // undefined인 기존 직접 호출 테스트와 API 사용자는 이전처럼 대화형 reset을 사용할 수 있도록 기본값을 true로 둡니다.
+  const { interactive = true } = runtime;
+
   // Git 저장소 밖에서는 `.git/convention/last-run.json` 위치를 안전하게 계산할 수 없습니다.
   // 따라서 상태 파일을 읽기 전에 먼저 Git working tree 여부를 확인합니다.
   if (!isGitRepository()) {
@@ -161,6 +170,19 @@ export async function runReset() {
     warn("convention reset 기록의 Git graph 검증에 실패해 자동 reset을 중단합니다.");
     info(graphValidation.reason);
     info("필요하면 git log를 확인한 뒤 수동으로 reset하세요.");
+    return;
+  }
+
+  // reset은 Git 히스토리 위치를 이동시키는 명령이므로 자동화 환경에서는 prompt를 띄우지 않고 즉시 중단합니다.
+  // --yes는 commit/PR preview 승인에는 사용할 수 있지만, reset 자동 승인으로 해석하지 않아 위험 명령이 CI에서 자동 실행되지 않게 합니다.
+  if (!interactive) {
+    warn(
+      "convention --reset은 Git 히스토리를 이동하는 작업이라 대화형 확인이 필요합니다.",
+    );
+    info(
+      "--no-interactive 또는 CI 환경에서는 reset 확인 prompt를 띄우지 않고 자동 reset도 실행하지 않습니다.",
+    );
+    info("필요하면 로컬 터미널에서 convention --reset을 다시 실행하세요.");
     return;
   }
 
