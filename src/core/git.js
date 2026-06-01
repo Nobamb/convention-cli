@@ -223,7 +223,17 @@ function parseChangedFileLine(line) {
 function getDiffForTrackedFile(file) {
   // 특정 파일 하나의 HEAD 대비 diff를 가져옵니다.
   // core.quotepath=false를 지정해 한글 등 non-ASCII 파일명이 escape되지 않게 하고, "--" 뒤에 파일 경로를 단일 인자로 전달합니다.
-  return runGit(["-c", "core.quotepath=false", "diff", "HEAD", "--", file]);
+  // Git은 "--" 뒤의 값도 `:(glob)**` 같은 pathspec magic으로 해석할 수 있습니다.
+  // 파일 경로는 argv 배열로 전달하더라도 pathspec 확장까지 막아야 민감 파일 제외 정책이 우회되지 않습니다.
+  return runGit([
+    "--literal-pathspecs",
+    "-c",
+    "core.quotepath=false",
+    "diff",
+    "HEAD",
+    "--",
+    file,
+  ]);
 }
 
 /**
@@ -241,6 +251,9 @@ function getDiffForUntrackedFile(file) {
     // --no-index 옵션은 index에 없는 파일을 다룰 때 사용합니다.
     // "/dev/null"은 비교 대상 파일로, untracked 파일과 비교해 diff를 생성합니다.
     return runGit([
+      // untracked 파일 diff도 Git pathspec 해석을 거치므로 literal 모드로 고정합니다.
+      // 이렇게 해야 파일명이 아니라 pathspec으로 범위가 확장되는 입력을 방지할 수 있습니다.
+      "--literal-pathspecs",
       "-c",
       "core.quotepath=false",
       "diff",
@@ -270,7 +283,17 @@ function isUntrackedFile(file) {
   // porcelian v1에서 untracked 파일은 line 시작이 "?? " 입니다.
   const output = execFileSync(
     "git",
-    ["-c", "core.quotepath=false", "status", "--porcelain", "--", file],
+    [
+      // 단일 파일의 untracked 여부를 확인할 때도 pathspec magic을 비활성화합니다.
+      // status 범위가 넓어지면 민감 파일이 diff 후보로 들어올 수 있으므로 조회 단계부터 literal로 제한합니다.
+      "--literal-pathspecs",
+      "-c",
+      "core.quotepath=false",
+      "status",
+      "--porcelain",
+      "--",
+      file,
+    ],
     {
       ...GIT_COMMAND_OPTIONS,
       stdio: ["ignore", "pipe", "ignore"],
@@ -425,7 +448,9 @@ export function addFile(file) {
 
   try {
     // "--" 뒤의 값은 옵션이 아니라 pathspec으로 해석되므로, 하이픈으로 시작하는 파일명도 안전하게 처리할 수 있습니다.
-    runGit(["add", "--", file]);
+    // `--`는 옵션 해석만 끝내며 Git pathspec magic 자체를 끄지는 않습니다.
+    // `--literal-pathspecs`를 같이 사용해 `:(glob)**` 같은 값이 stage 범위를 넓히지 못하게 합니다.
+    runGit(["--literal-pathspecs", "add", "--", file]);
   } catch (error) {
     // Git 실패 stderr에는 환경 정보나 경로가 포함될 수 있어 일반 메시지만 남기고 원본 에러는 호출자에게 전파합니다.
     logError("Failed to stage file.");
@@ -464,7 +489,7 @@ export function commit(message, files = []) {
     // 사용자가 실행 전에 `.env` 등을 staged 해둔 상태일 수 있으므로, pathspec 제한은 마지막 방어선입니다.
     const args =
       files.length > 0
-        ? ["commit", "-m", message, "--", ...files]
+        ? ["--literal-pathspecs", "commit", "-m", message, "--", ...files]
         : ["commit", "-m", message];
     runGit(args);
   } catch (error) {
