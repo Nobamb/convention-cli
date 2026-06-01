@@ -142,8 +142,8 @@ test('git core implementation avoids unsafe execution and logging patterns', () 
   assert.equal(/shell\s*:\s*true/.test(source), false);
   assert.equal(/console\./.test(source), false);
   assert.match(source, /\[["']add["'], ["']-A["']\]/);
-  assert.match(source, /\[["']add["'], ["']--["'], file\]/);
-  assert.match(source, /\[["']commit["'], ["']-m["'], message\]/);
+  assert.match(source, /\[["']--literal-pathspecs["'], ["']add["'], ["']--["'], file\]/);
+  assert.match(source, /\[\s*["']--literal-pathspecs["'],\s*["']commit["'],\s*["']-m["'],\s*message/);
   assert.match(source, /\[["']push["']\]/);
   assert.match(source, /\[["']reset["'], commitHash\]/);
   assert.doesNotMatch(source, /\[["']reset["'], ["']--hard["']\]/);
@@ -327,6 +327,20 @@ test('getFileDiffs includes untracked new files and excludes clean, empty, non-s
     assert.match(fileDiffs[0].diff, /untracked/);
     assert.equal(fileDiffs.some(({ diff }) => diff.includes('PASSWORD=secret')), false);
     assert.equal(fileDiffs.some(({ diff }) => diff.includes('PRIVATE_KEY=secret')), false);
+  });
+});
+
+test('getFileDiffs treats Git pathspec magic as a literal filename', { skip: skipWithoutGit }, async () => {
+  await withRepo((repoDir) => {
+    writeFile(repoDir, '.env', 'TOKEN=old\n');
+    runGit(repoDir, ['add', '.env']);
+    runGit(repoDir, ['commit', '-m', 'chore: track env fixture']);
+    writeFile(repoDir, '.env', 'TOKEN=secret\n');
+    writeFile(repoDir, 'README.md', 'changed readme\n');
+
+    const fileDiffs = getFileDiffs([':(glob)**']);
+
+    assert.deepEqual(fileDiffs, []);
   });
 });
 
