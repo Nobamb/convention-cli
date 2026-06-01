@@ -91,6 +91,11 @@ program.option(
 );
 
 program.option(
+  "--set-upstream <remote>",
+  "upstream이 없는 브랜치를 push할 때 지정한 등록 remote로 upstream을 설정합니다. --push와 함께 사용해야 합니다.",
+);
+
+program.option(
   "--reset",
   "마지막 convention 실행에서 생성된 commit들을 취소하고 변경사항은 working tree에 남깁니다.",
 );
@@ -241,6 +246,8 @@ async function main() {
   // 설정 명령과 함께 쓰면 의미가 모호한 런타임 제어 옵션입니다.
   const hasRuntimeModifier =
     options.yes !== undefined || options.noInteractive !== undefined;
+  // --set-upstream은 push 동작을 확장하는 옵션이므로 단독 실행이나 설정 명령과의 혼용을 허용하지 않습니다.
+  const hasPushUpstreamModifier = options.setUpstream !== undefined;
   // --pr에만 의미가 있는 보조 옵션 목록입니다.
   const hasPrModifier =
     options.base !== undefined ||
@@ -273,7 +280,10 @@ async function main() {
   }
 
   // 1. 설정 옵션과 실행 옵션 혼합 사용 시 에러 발생
-  if (hasConfigOption && (hasExecutionOption || hasRuntimeModifier)) {
+  if (
+    hasConfigOption &&
+    (hasExecutionOption || hasRuntimeModifier || hasPushUpstreamModifier)
+  ) {
     throw new Error(
       "설정 옵션(--set-mode, --language, --question, --model)과 실행/런타임 옵션(--step, --batch, --group, --reset, --push, --yes, --no-interactive)은 함께 사용할 수 없습니다. 의도를 명확히 하여 한 종류의 명령어만 입력해 주세요.",
     );
@@ -313,6 +323,12 @@ async function main() {
   if (!options.pr && hasPrModifier) {
     throw new Error(
       "--base, --head, --remote, --print-only, --yes, --draft 옵션은 --pr와 함께 사용해야 합니다.",
+    );
+  }
+
+  if (hasPushUpstreamModifier && !options.push) {
+    throw new Error(
+      "--set-upstream 옵션은 --push와 함께 사용해야 합니다. upstream 설정 없이 일반 설정 명령이나 commit flow를 실행하지 않습니다.",
     );
   }
 
@@ -456,7 +472,11 @@ async function main() {
   if (options.step) {
     await runBackgroundUpdateCheck();
     // 변경 파일을 하나씩 개별 커밋합니다.
-    await runStepCommit({ push: options.push, ...runtime });
+    await runStepCommit({
+      push: options.push,
+      setUpstream: options.setUpstream,
+      ...runtime,
+    });
     return;
   }
 
@@ -464,7 +484,11 @@ async function main() {
   if (options.batch) {
     await runBackgroundUpdateCheck();
     // 전체 변경 파일을 하나의 통합 커밋으로 만듭니다.
-    await runBatchCommit({ push: options.push, ...runtime });
+    await runBatchCommit({
+      push: options.push,
+      setUpstream: options.setUpstream,
+      ...runtime,
+    });
     return;
   }
 
@@ -472,13 +496,21 @@ async function main() {
   if (options.group) {
     await runBackgroundUpdateCheck();
     // 그룹 preview와 사용자 확인 이후 그룹별 커밋을 생성합니다.
-    await runGroupedCommit({ push: options.push, ...runtime });
+    await runGroupedCommit({
+      push: options.push,
+      setUpstream: options.setUpstream,
+      ...runtime,
+    });
     return;
   }
 
   // 지정된 옵션이 없으면 저장된 설정(config.mode)에 따라 기본 commit flow를 시작합니다.
   await runBackgroundUpdateCheck();
-  await runDefaultCommit({ push: options.push, ...runtime });
+  await runDefaultCommit({
+    push: options.push,
+    setUpstream: options.setUpstream,
+    ...runtime,
+  });
 }
 
 /**
