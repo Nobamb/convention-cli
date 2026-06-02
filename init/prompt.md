@@ -272,7 +272,7 @@ test-A.md라는 파일을 한국어로 적어줘
 
 22. gemini 3.0 flash 모델 agent 1개를 V 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 V 단계 참고해서 V단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 V폴더 만들면서 그 폴더 내에 test-V.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/V에 research-V.md 파일로 정리해줘
 
-22-1. V 단계는 --reset Agent이므로 @work_process/mvp-2/V/research-V.md 내용에는 commander --reset 옵션, git reset HEAD~1 실행, 사용자 confirm, 변경 사항 보존 여부 안내 로직을 정리해줘. @work_process/mvp-2/V/test-V.md 내용에는 convention --reset 실행 시 최근 커밋이 취소되고 변경 사항은 working tree에 남는지 확인하는 테스트 항목을 한국어로 정리해줘.
+22-1. V 단계는 --reset Agent이므로 @work_process/mvp-2/V/research-V.md 내용에는 commander --reset 옵션, 마지막 convention 실행 transaction의 beforeHead/afterHead 검증, 현재 HEAD 일치 확인, 사용자 confirm 이후 git reset <beforeHead> 실행, 변경 사항 보존 여부 안내 로직을 정리해줘. 상대 ref 추정 fallback이나 git reset --hard는 사용하지 않도록 해줘. @work_process/mvp-2/V/test-V.md 내용에는 convention --reset 실행 시 transaction 검증을 통과한 convention commit만 취소되고 변경 사항은 working tree에 남는지 확인하는 테스트 항목을 한국어로 정리해줘.
 
 23. gemini 3.0 flash 모델 agent 1개를 W 단계 전담 agent로 배정해서 @AGENTS.md @GEMINI.md @init/00_rule.md @init/02_mvp-2.md 의 W 단계 참고해서 W단계가 잘 진행되었는지 확인하고자 테스트해서 작업해야 될 부분에 대해 @work_process/mvp-2/에 W폴더 만들면서 그 폴더 내에 test-W.md로 만들어서 정리해주고, 현재 작업 상황에 대해 어떻게 구체적으로 작업하면 좋을 지 @work_process/mvp-2/W에 research-W.md 파일로 정리해줘
 
@@ -454,7 +454,7 @@ test-A.md라는 파일을 한국어로 적어줘
 
 35-1. AI 단계는 PR Preview Agent이므로 @work_process/advanced/AI/research-AI.md와 @work_process/advanced/AI/test-AI.md를 기반으로 생성된 PR 제목과 본문을 보여주고 Create PR, Edit manually, Print only, Cancel 선택지를 제공해줘. Create PR은 사용자 확인 또는 --yes 정책이 있을 때만 실행되도록 해줘.
 
-35-2. 이번에는 convention --reset을 했을 때 HEAD~1로만 고정해서 리셋을 하게 되서 step을 했을 때 여러 파일들을 커밋한 상태에서 전부 커밋 전으로 되돌리려면 그 파일들의 수만큼 리셋을 해야 되잖아 이걸 좀 바꿔보고 싶거든 HEAD~N(마지막으로 convention 실행했을 때 커밋된 파일 N개)의 형태로 말이야 마지막으로 convention을 통해 커밋한 파일들만 로컬 파일 내에 따로 기존에 내용들을 지우고 해당 파일들을 넣어서 나중에 --reset을 하면 해당 파일들의 수에 맞춰서 리셋을 시키게 할 지 아니면 마지막 커밋을 기점으로 시간대가 겹치는 파일들의 숫자에 맞춰 reset을 시키게 할 지 고민이야 너는 어떻게 생각해? 더 좋은 방법이 있는지 알려주고, 너의 의견을 가지고 proposal/proposal1.md에 정리해 거기서 내가 확인해서 어떻게 해야될 지 판단해볼게
+35-2. convention --reset은 상대 ref나 시간대 추정으로 되돌릴 commit 수를 계산하지 말고, 마지막 convention 실행 시 저장한 transaction 기록을 기준으로 설계해야 해. beforeHead, afterHead, convention이 생성한 commit 목록, 파일 목록을 기록하고, reset 실행 시 현재 HEAD가 기록된 afterHead와 일치하며 beforeHead가 afterHead의 ancestor인지 확인한 뒤 사용자 confirm 이후 git reset <beforeHead>만 허용하는 방식이 안전한지 검토해줘. 이 방식과 다른 후보들을 비교해서 proposal/proposal1.md에 정리하되, git reset --hard나 transaction 기록 없는 자동 reset은 금지한다는 결론을 명확히 포함해줘.
 
 ### Phase 7. npm 업데이트 알림
 
