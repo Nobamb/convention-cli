@@ -142,9 +142,7 @@ export async function runReset(runtime = {}) {
   // 마지막 convention 실행 기록이 없으면 리셋 종료
   if (!transaction) {
     warn("마지막 convention 실행 기록을 찾을 수 없어 자동 reset을 중단합니다.");
-    info(
-      "기존 방식으로 최근 commit 1개만 취소하려면 git reset HEAD~1을 직접 실행하세요.",
-    );
+    info("필요하면 git log를 확인한 뒤 되돌릴 범위를 직접 판단해 주세요.");
     info("변경사항은 working tree에 남습니다.");
     return;
   }
