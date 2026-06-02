@@ -52,6 +52,14 @@ _(Note: Once published to npm, you will be able to install it using `npm install
 
 Once installed, you can use the `convention` command from within any Git repository.
 
+### Detailed Guides
+
+- [Model setup](docs/model.md): provider, localLLM, API Key, OAuth, and external transmission policy.
+- [OAuth](docs/oauth.md): browser login, state/PKCE, token storage, and secret handling.
+- [Templates](docs/templates.md): team convention template schema, validation, and prompt application.
+- [Pull Requests](docs/pr.md): PR title/body generation, preview, print-only, and GitHub CLI integration.
+- [GitHub Actions](docs/github-actions.md): CI mode, outputs, secrets, permissions, and fork PR precautions.
+
 <!-- 기본 명령어: 도움말 확인, 기본 커밋 실행, 배치/단계별 커밋 등 자주 사용하는 명령어를 보여줍니다. -->
 
 ### Basic Commands
@@ -307,6 +315,14 @@ npm link
 ```
 
 ## 사용법
+
+### 상세 가이드
+
+- [모델 설정](docs/model.md): provider, localLLM, API Key, OAuth, 외부 전송 정책을 정리합니다.
+- [OAuth](docs/oauth.md): 브라우저 로그인, state/PKCE, token 저장, secret 처리 기준을 설명합니다.
+- [템플릿](docs/templates.md): 팀 컨벤션 template schema, 검증, prompt 적용 방식을 정리합니다.
+- [Pull Request](docs/pr.md): PR 제목/본문 생성, 미리보기, print-only, GitHub CLI 연동을 설명합니다.
+- [GitHub Actions](docs/github-actions.md): CI mode, output, secret, permissions, fork PR 주의사항을 정리합니다.
 
 ```bash
 # 도움말 확인
