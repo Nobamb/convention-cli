@@ -67,7 +67,7 @@ README.md
 커밋 이후에는 상황에 따라 push 또는 reset을 실행해야 합니다.
 
 git push
-git reset HEAD~1
+git reset <beforeHead>
 
 이러한 작업 역시 반복적으로 발생하므로, 하나의 CLI 흐름 안에서 처리할 수 있다면 개발 효율성이 높아집니다.
 
@@ -172,8 +172,8 @@ Options:
 
 --push AI 커밋 작성이 완료된 후, 현재 브랜치의 내용을
 원격 저장소(GitHub)로 즉시 푸시합니다.
---reset 가장 최근에 진행된 커밋을 취소합니다.
-(git reset HEAD~1 명령어와 동일하게 동작)
+--reset 마지막 convention 실행 기록으로 검증된 커밋을 취소합니다.
+(transaction의 beforeHead/afterHead 검증 후 git reset <beforeHead>와 동일하게 동작)
 
 Configuration Options:
 --set-mode <mode> 기본 convention 명령어의 동작 방식을 변경합니다.
@@ -296,9 +296,9 @@ convention --reset
 
 가장 최근에 진행한 커밋을 취소합니다.
 
-내부적으로는 다음 명령어와 동일하게 동작합니다.
+내부적으로는 마지막 convention 실행 transaction을 검증한 뒤 다음 명령어와 동일하게 동작합니다.
 
-git reset HEAD~1
+git reset <beforeHead>
 
 적합한 상황
 
@@ -1042,7 +1042,7 @@ git diff
 git add
 git commit
 git push
-git reset HEAD~1
+git reset <beforeHead>
 
 ---
 
